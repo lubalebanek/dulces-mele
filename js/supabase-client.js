@@ -15,12 +15,9 @@ const SupabaseBridge = (() => {
         isConnected = true;
         console.log('✓ Conectado exitosamente a Supabase');
         
-        // 1. Sincronizar pedidos de la nube al abrir el panel
         if (window.App) {
           sincronizarPedidos();
         }
-
-        // 2. Escuchar nuevos pedidos en tiempo real
         subscribirCambiosEnTiempoReal();
       } catch (err){
         console.error('Error inicializando Supabase:', err);
@@ -40,7 +37,6 @@ const SupabaseBridge = (() => {
       let hayNuevos = false;
 
       pedidosNube.forEach(pNube => {
-        // Si el pedido no está en la computadora, lo descargamos
         if (!pedidosLocal.find(p => p.codigo === pNube.codigo)) {
           const itemsDelPedido = itemsNube.filter(i => i.pedido_id === pNube.id).map(i => ({
             productoId: i.producto_id,
@@ -77,7 +73,6 @@ const SupabaseBridge = (() => {
 
       if (hayNuevos) {
         Storage.save('pedidos', pedidosLocal);
-        // Refrescar la pantalla si estamos viéndola
         if (window.App && (App.currentSection === 'pedidos' || App.currentSection === 'dashboard')) {
           App.goTo(App.currentSection);
         }
@@ -89,17 +84,12 @@ const SupabaseBridge = (() => {
 
   function subscribirCambiosEnTiempoReal(){
     if (!client) return;
-
     client
       .channel('pedidos-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pedidos' }, payload => {
-        const nuevo = payload.new;
-        
-        // Cuando entra un pedido nuevo, jalamos los datos inmediatamente
         sincronizarPedidos();
-
         if (window.App && typeof App.toast === 'function'){
-          App.toast(`🧁 ¡Nuevo pedido recibido #${nuevo.codigo || ''} de ${nuevo.cliente_nombre}!`, 'success');
+          App.toast(`🧁 ¡Nuevo pedido recibido #${payload.new.codigo || ''} de ${payload.new.cliente_nombre}!`, 'success');
         }
       })
       .subscribe();
@@ -120,26 +110,45 @@ const SupabaseBridge = (() => {
   async function enviarPedido(pedidoData){
     if (!client) return null;
     try {
-      const { data, error } = await client.rpc('crear_pedido_con_descuento', {
-        p_cliente_nombre: pedidoData.clienteNombre,
-        p_cliente_telefono: pedidoData.clienteTelefono,
-        p_cliente_email: pedidoData.clienteEmail || '',
-        p_tipo_entrega: pedidoData.tipoEntrega,
-        p_direccion_despacho: pedidoData.direccionDespacho || '',
-        p_fecha_entrega: pedidoData.fechaEntrega,
-        p_hora_entrega: pedidoData.horaEntrega || '',
-        p_notas: pedidoData.notas || '',
-        p_total: pedidoData.total,
-        p_abono: pedidoData.abono || 0,
-        p_medio_pago: pedidoData.medioPago || 'Transferencia',
-        p_origen: pedidoData.origen || 'web_cliente',
-        p_items: pedidoData.items
-      });
+      // Inserción directa a la tabla, sin pasar por la función compleja
+      const { data: pedData, error: pedErr } = await client.from('pedidos').insert([{
+        codigo: pedidoData.codigo,
+        cliente_nombre: pedidoData.clienteNombre,
+        cliente_telefono: pedidoData.clienteTelefono,
+        cliente_email: pedidoData.clienteEmail || '',
+        tipo_entrega: pedidoData.tipoEntrega,
+        direccion_despacho: pedidoData.direccionDespacho || '',
+        fecha_entrega: pedidoData.fechaEntrega,
+        hora_entrega: pedidoData.horaEntrega || '',
+        notas: pedidoData.notas || '',
+        total: pedidoData.total,
+        abono: pedidoData.abono || 0,
+        saldo_pendiente: pedidoData.saldoPendiente,
+        medio_pago: pedidoData.medioPago || 'Transferencia',
+        origen: pedidoData.origen || 'web_cliente',
+        estado: 'pendiente'
+      }]).select();
 
-      if (error) throw error;
-      return data; 
+      if (pedErr) throw pedErr;
+      const nuevoId = pedData[0].id;
+
+      if (pedidoData.items && pedidoData.items.length > 0) {
+        const itemsNube = pedidoData.items.map(i => ({
+          pedido_id: nuevoId,
+          producto_id: i.productoId,
+          nombre: i.nombre,
+          cantidad: i.cantidad,
+          precio_unitario: i.precioUnitario,
+          subtotal: i.subtotal,
+          tipo_stock: i.tipoStock || 'terminado'
+        }));
+        
+        const { error: itemsErr } = await client.from('pedido_items').insert(itemsNube);
+        if (itemsErr) throw itemsErr;
+      }
+      return nuevoId; 
     } catch (e){
-      console.error('Error creando pedido en Supabase:', e);
+      console.error('Error subiendo pedido a Supabase:', e);
       return null;
     }
   }
