@@ -289,15 +289,17 @@ const Storage = (() => {
     return false;
   }
 
-  function crearPedido({
+function crearPedido({
     clienteNombre, clienteTelefono, clienteEmail = '', tipoEntrega = 'retiro',
     direccionDespacho = '', fechaEntrega, horaEntrega = '', notas = '',
     total, abono = 0, medioPago = 'Transferencia', origen = 'manual',
     items = []
   }){
     const pedidos = get('pedidos');
-    const correlativo = pedidos.length + 101;
-    const codigo = `DM-${correlativo}`;
+    
+    // 👇 SOLUCIÓN: Generar un código aleatorio de 4 dígitos para que nunca choquen
+    const codigo = `DM-${Math.floor(1000 + Math.random() * 9000)}`;
+    
     const abonoNum = Number(abono) || 0;
     const totalNum = Number(total) || 0;
     const saldoPendiente = Math.max(0, totalNum - abonoNum);
