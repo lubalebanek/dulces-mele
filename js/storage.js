@@ -192,6 +192,15 @@ const Storage = (() => {
   function init(){
     if (!localStorage.getItem(KEYS.configuracion)){
       save('configuracion', defaultConfig());
+    } else {
+      // FORZAR ACTUALIZACIÓN PARA DISPOSITIVOS QUE YA TENÍAN LA APP ABIERTA
+      const cfg = get('configuracion');
+      const def = defaultConfig();
+      cfg.telefonoWhatsApp = def.telefonoWhatsApp;
+      cfg.datosTransferencia = def.datosTransferencia;
+      cfg.supabaseUrl = def.supabaseUrl;
+      cfg.supabaseAnonKey = def.supabaseAnonKey;
+      save('configuracion', cfg);
     }
     applySeedIfNeeded();
     seedPasteleriaSiCorresponde();
