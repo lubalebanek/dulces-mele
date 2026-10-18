@@ -72,11 +72,11 @@ const Storage = (() => {
       permitirStockNegativo: false,
       nombreNegocio: 'Dulces Mele',
       moneda: 'CLP',
-      telefonoWhatsApp: '+56912345678',
-      datosTransferencia: 'Banco Estado / Cuenta RUT / Rut: 12.345.678-9 / dulcesmele@gmail.com',
+      telefonoWhatsApp: '+56964790920',
+      datosTransferencia: 'Nombre: Andrea Lebanek / Rut: 14.738.359-2 /Banco Estado / Cuenta RUT',
       cuposDiariosTortas: 5,
-      supabaseUrl: '',
-      supabaseAnonKey: ''
+      supabaseUrl: 'https://mdbftytjmpvakibgdavt.supabase.co',
+      supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kYmZ0eXRqbXB2YWtpYmdkYXZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNjAwOTcsImV4cCI6MjEwNzczNjA5N30.k-0H5RZsCHIPT4LUy-D-eRMQ9xQsLyJUtIS-B7nR9H4'
     };
   }
 
