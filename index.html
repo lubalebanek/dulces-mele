@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Dulces Mele — Gestor de Pastelería</title>
+<link rel="icon" type="image/png" href="img/favicon-256.png">
+<link rel="stylesheet" href="css/styles.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="app-shell">
+  <!-- Sidebar (escritorio) -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="img/logo-512.png" alt="Dulces Mele" class="brand-logo" />
+      <div class="brand-title">Dulces Mele</div>
+      <div class="brand-sub">Control de ventas, inventario y gastos</div>
+    </div>
+    <ul class="nav-list" id="sidebar-nav-list"></ul>
+    <div style="padding: 10px 0;">
+      <a href="pedir.html" target="_blank" class="btn btn-secondary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; text-decoration: none;">
+        <span>🌐 Ver Tienda Clientes</span>
+      </a>
+    </div>
+    <div class="sidebar-footer">Gestor Dulces Mele</div>
+  </aside>
+
+  <!-- Contenido principal -->
+  <div class="main-column">
+    <header class="mobile-topbar">
+      <img src="img/favicon-256.png" alt="Dulces Mele" />
+      <span>Dulces Mele</span>
+      <a href="pedir.html" target="_blank" style="margin-left: auto; font-size: 12px; font-weight: 600; text-decoration: none; background: var(--surface-2); padding: 4px 8px; border-radius: var(--radius-sm);">🌐 Tienda</a>
+    </header>
+    <main class="main" id="main-content">
+      <div class="empty-state">Cargando…</div>
+    </main>
+  </div>
+</div>
+
+<!-- Menú inferior (móvil) -->
+<nav class="bottom-nav" id="bottom-nav-list"></nav>
+
+<!-- Notificaciones -->
+<div id="toast-container" aria-live="polite"></div>
+
+<!-- Supabase y sincronización en la nube -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/storage.js"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/analytics.js"></script>
+<script src="js/app.js"></script>
+
+<!-- Módulos de funcionalidad -->
+<script src="js/pedidos.js"></script>
+<script src="js/productos.js"></script>
+<script src="js/ventas.js"></script>
+<script src="js/inventario.js"></script>
+<script src="js/gastos.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/reportes.js"></script>
+<script src="js/calendario.js"></script>
+<script src="js/config.js"></script>
+
+</body>
+</html>

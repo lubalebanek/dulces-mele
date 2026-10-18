@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Dulces Mele — Haz tu Pedido Online</title>
+<link rel="icon" type="image/png" href="img/favicon-256.png">
+<link rel="stylesheet" href="css/styles.css" />
+<style>
+  /* Estilos específicos para la tienda pública de clientes */
+  .store-container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 16px 16px 100px 16px;
+  }
+  .store-hero {
+    background: linear-gradient(135deg, #F4ECE2 0%, #FDFBF8 100%);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px 24px;
+    text-align: center;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+  }
+  .store-logo {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 12px;
+    border: 3px solid var(--surface);
+    box-shadow: 0 4px 12px rgba(59,42,34,0.1);
+  }
+  .category-nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+    scrollbar-width: none;
+  }
+  .category-nav::-webkit-scrollbar { display: none; }
+  .category-pill {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 8px 18px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .category-pill:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(59,42,34,0.08);
+  }
+  .category-pill.active {
+    background: var(--berry);
+    color: #fff;
+    border-color: var(--berry);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(140, 75, 92, 0.25);
+  }
+  .catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .product-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    box-shadow: var(--shadow);
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, border-color 0.22s ease;
+  }
+  .product-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px rgba(59,42,34,0.09);
+    border-color: #DAC9B3;
+  }
+  .product-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .product-title {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.3;
+  }
+  .product-price {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--accent-dark);
+    white-space: nowrap;
+  }
+  .product-desc {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin-bottom: 14px;
+    flex-grow: 1;
+  }
+  .qty-control {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--bg);
+    transition: border-color 0.18s ease;
+  }
+  .qty-control:hover {
+    border-color: var(--accent);
+  }
+  .qty-btn {
+    background: transparent;
+    border: none;
+    width: 32px;
+    height: 34px;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink);
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .qty-btn:hover {
+    background: var(--surface-2);
+  }
+  .qty-input {
+    width: 36px;
+    text-align: center;
+    border: none;
+    background: transparent;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  @keyframes cartSlideUp {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  .cart-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 -4px 20px rgba(59,42,34,0.12);
+    z-index: 100;
+    animation: cartSlideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .cart-summary {
+    display: flex;
+    flex-direction: column;
+  }
+  .cart-total {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-dark);
+  }
+  .badge-cupo {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="store-container">
+  <!-- Hero / Encabezado -->
+  <div class="store-hero">
+    <img src="img/logo-512.png" alt="Dulces Mele" class="store-logo" />
+    <h1 style="font-size: 28px; margin-bottom: 6px;">Dulces Mele</h1>
+    <p class="text-soft" style="max-width: 500px; margin: 0 auto 12px auto; font-size: 15px;">
+      Pastelería artesanal hecha con dedicación. Tortas a pedido, galletas caseras y alfajores de maicena.
+    </p>
+    <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+      <span class="badge badge-sage">✓ Ingredientes de primera calidad</span>
+      <span class="badge badge-neutral">📍 Retiro en local o Despacho</span>
+    </div>
+  </div>
+
+  <!-- Navegación por Categorías -->
+  <div class="category-nav" id="category-nav"></div>
+
+  <!-- Cuadrícula de Productos -->
+  <div class="catalog-grid" id="catalog-grid"></div>
+</div>
+
+<!-- Barra flotante del carrito -->
+<div class="cart-bar" id="cart-bar" style="display: none;">
+  <div class="cart-summary">
+    <span class="text-soft" style="font-size: 12px;" id="cart-items-count">0 productos seleccionados</span>
+    <span class="cart-total" id="cart-total-amount">$0</span>
+  </div>
+  <button class="btn btn-primary" id="btn-ver-pedido" style="padding: 10px 22px; font-size: 15px;">
+    Ver mi pedido 🛒
+  </button>
+</div>
+
+<!-- Modal / Drawer de Finalizar Pedido -->
+<div id="checkout-modal-placeholder"></div>
+
+<!-- Notificaciones -->
+<div id="toast-container" aria-live="polite"></div>
+
+<!-- Scripts de almacenamiento y nube -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/storage.js"></script>
+<script src="js/supabase-client.js"></script>
+
+<script>
+  /* Lógica de la Tienda Pública */
+  const Cart = (() => {
+    let items = {}; // { [productoId]: { producto, cantidad } }
+    let categoriaActiva = 'Todas';
+
+    async function init(){
+      Storage.init();
+      // Si Supabase está conectado, sincronizar productos frescos desde la nube
+      if (typeof SupabaseBridge !== 'undefined' && SupabaseBridge.isConnected){
+        const prodsNube = await SupabaseBridge.fetchProductos();
+        if (prodsNube && prodsNube.length > 0){
+          Storage.save('productos', prodsNube.map(p => ({
+            id: p.id,
+            nombre: p.nombre,
+            categoria: p.categoria,
+            precioVenta: Number(p.precio_venta),
+            unidadVenta: p.unidad_venta,
+            tipoStock: p.tipo_stock,
+            stockActual: Number(p.stock_actual),
+            stockMinimo: Number(p.stock_minimo),
+            descripcion: p.descripcion,
+            estado: p.estado
+          })));
+        }
+      }
+      renderCategorias();
+      renderCatalogo();
+    }
+
+    function formatCLP(val){
+      return (Number(val) || 0).toLocaleString('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 });
+    }
+
+    function renderCategorias(){
+      const productos = Storage.get('productos').filter(p => p.estado === 'activo');
+      const cats = ['Todas', ...new Set(productos.map(p => p.categoria))].sort();
+      const nav = document.getElementById('category-nav');
+      nav.innerHTML = cats.map(c => `
+        <button class="category-pill ${c === categoriaActiva ? 'active' : ''}" data-cat="${c}">${c}</button>
+      `).join('');
+
+      nav.querySelectorAll('[data-cat]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          categoriaActiva = btn.dataset.cat;
+          renderCategorias();
+          renderCatalogo();
+        });
+      });
+    }
+
+    function renderCatalogo(){
+      let productos = Storage.get('productos').filter(p => p.estado === 'activo');
+      if (categoriaActiva !== 'Todas'){
+        productos = productos.filter(p => p.categoria === categoriaActiva);
+      }
+      productos.sort((a,b) => a.nombre.localeCompare(b.nombre));
+
+      const grid = document.getElementById('catalog-grid');
+      if (productos.length === 0){
+        grid.innerHTML = `<div class="empty-state" style="grid-column: 1/-1;">No hay productos disponibles en esta categoría.</div>`;
+        return;
+      }
+
+      grid.innerHTML = productos.map(p => {
+        const esTerminado = p.tipoStock === 'terminado';
+        const stockActual = Number(p.stockActual) || 0;
+        const agotado = esTerminado && stockActual <= 0;
+        const qtyEnCarrito = items[p.id] ? items[p.id].cantidad : 0;
+
+        return `
+          <div class="product-card" id="card-${p.id}">
+            <div>
+              <div class="product-header">
+                <h3 class="product-title">${escapeHtml(p.nombre)}</h3>
+                <span class="product-price">${formatCLP(p.precioVenta)}</span>
+              </div>
+              <div style="margin-bottom: 8px;">
+                ${esTerminado ? `
+                  <span class="badge ${agotado ? 'badge-danger' : 'badge-sage'}">
+                    ${agotado ? 'Agotado por hoy' : `Disponibles: ${stockActual} ${p.unidadVenta}s`}
+                  </span>
+                ` : `
+                  <span class="badge badge-berry">Bajo encargo (mín. 48 hrs)</span>
+                `}
+              </div>
+              <div class="product-desc">${escapeHtml(p.descripcion || 'Elaborado artesanalmente con la mejor receta casera.')}</div>
+            </div>
+
+            <div style="display: flex; gap: 8px; align-items: center; margin-top: 12px;">
+              ${agotado ? `
+                <button class="btn btn-secondary" disabled style="width: 100%; opacity: 0.6;">Agotado</button>
+              ` : `
+                <div class="qty-control">
+                  <button class="qty-btn" onclick="Cart.adjustQty('${p.id}', -1)">−</button>
+                  <input type="text" class="qty-input" id="qty-${p.id}" value="${qtyEnCarrito > 0 ? qtyEnCarrito : 1}" readonly />
+                  <button class="qty-btn" onclick="Cart.adjustQty('${p.id}', 1, ${esTerminado ? stockActual : 99})">+</button>
+                </div>
+                <button class="btn btn-primary" style="flex: 1;" onclick="Cart.addToCart('${p.id}')">
+                  ${qtyEnCarrito > 0 ? 'Actualizar' : 'Agregar'}
+                </button>
+              `}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function adjustQty(prodId, delta, maxStock = 99){
+      const input = document.getElementById(`qty-${prodId}`);
+      if (!input) return;
+      let val = (parseInt(input.value) || 1) + delta;
+      if (val < 1) val = 1;
+      if (val > maxStock) val = maxStock;
+      input.value = val;
+    }
+
+    function addToCart(prodId){
+      const productos = Storage.get('productos');
+      const prod = productos.find(p => p.id === prodId);
+      if (!prod) return;
+
+      const input = document.getElementById(`qty-${prodId}`);
+      const cant = parseInt(input.value) || 1;
+
+      items[prodId] = {
+        producto: prod,
+        cantidad: cant
+      };
+
+      updateCartBar();
+      showToast(`Agregaste ${cant}x ${prod.nombre} a tu pedido`);
+    }
+
+    function removeFromCart(prodId){
+      delete items[prodId];
+      updateCartBar();
+      renderCatalogo();
+      if (document.getElementById('checkout-modal')) {
+        renderCheckoutModalContent();
+      }
+    }
+
+    function updateCartBar(){
+      const bar = document.getElementById('cart-bar');
+      const countEl = document.getElementById('cart-items-count');
+      const totalEl = document.getElementById('cart-total-amount');
+
+      const itemKeys = Object.keys(items);
+      if (itemKeys.length === 0){
+        bar.style.display = 'none';
+        return;
+      }
+
+      bar.style.display = 'flex';
+      const totalCount = itemKeys.reduce((sum, id) => sum + items[id].cantidad, 0);
+      const totalAmount = itemKeys.reduce((sum, id) => sum + (items[id].cantidad * items[id].producto.precioVenta), 0);
+
+      countEl.textContent = `${totalCount} ${totalCount === 1 ? 'producto' : 'productos'} en tu pedido`;
+      totalEl.textContent = formatCLP(totalAmount);
+    }
+
+    function openCheckout(){
+      const itemKeys = Object.keys(items);
+      if (itemKeys.length === 0){
+        alert('Tu pedido está vacío. Elige tus productos favoritos primero.');
+        return;
+      }
+
+      const modalWrap = document.getElementById('checkout-modal-placeholder');
+      modalWrap.innerHTML = `
+        <div class="modal-overlay" id="checkout-modal">
+          <div class="modal modal-lg" style="max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+              <h3>Confirmar tu Pedido 🧁</h3>
+              <button class="modal-close" onclick="Cart.closeCheckout()">×</button>
+            </div>
+            <div id="checkout-body"></div>
+          </div>
+        </div>
+      `;
+      renderCheckoutModalContent();
+    }
+
+    function closeCheckout(){
+      const modal = document.getElementById('checkout-modal');
+      if (modal) modal.remove();
+    }
+
+function renderCheckoutModalContent(){
+      const itemKeys = Object.keys(items);
+      if (itemKeys.length === 0){
+        closeCheckout();
+        return;
+      }
+
+      const totalAmount = itemKeys.reduce((sum, id) => sum + (items[id].cantidad * items[id].producto.precioVenta), 0);
+      const config = Storage.get('configuracion') || {};
+
+      // Calcular fecha mínima: mañana si incluye tortas, hoy si son solo galletas
+      const tieneTortas = itemKeys.some(id => items[id].producto.tipoStock === 'a_pedido');
+      const minDate = new Date();
+      if (tieneTortas) minDate.setDate(minDate.getDate() + 1); // Tortas requieren mín 24-48h
+      const minDateISO = minDate.toISOString().slice(0, 10);
+
+      const body = document.getElementById('checkout-body');
+      body.innerHTML = `
+        <div style="margin-bottom: 20px;">
+          <h4 style="margin-top:0;">Resumen de tus productos</h4>
+          <div style="background: var(--surface-2); padding: 12px; border-radius: var(--radius-sm);">
+            ${itemKeys.map(id => {
+              const i = items[id];
+              return `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                  <div>
+                    <strong>${i.cantidad}x${escapeHtml(i.producto.nombre)}</strong>
+                    <div class="text-soft" style="font-size:12px;">${formatCLP(i.producto.precioVenta)} c/u</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:12px;">
+                    <strong>${formatCLP(i.cantidad * i.producto.precioVenta)}</strong>
+                    <button type="button" class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="Cart.removeFromCart('${id}')">✕</button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+            <div style="border-top: 1px dashed var(--line); padding-top: 8px; margin-top: 8px; display:flex; justify-content:space-between; font-size:17px;">
+              <span>Total a pagar:</span>
+              <strong style="color:var(--accent-dark);">${formatCLP(totalAmount)}</strong>
+            </div>
+          </div>
+        </div>
+
+        <form id="form-cliente-pedido">
+          <h4>Datos de Contacto y Entrega</h4>
+          <div class="form-grid">
+            <div class="field full">
+              <label>Tu Nombre y Apellido *</label>
+              <input type="text" id="cli-nombre" placeholder="Ej: Marcela González" required />
+            </div>
+            <div class="field">
+              <label>Tu WhatsApp / Celular *</label>
+              <input type="tel" id="cli-telefono" placeholder="+569..." value="+569" required />
+            </div>
+            <div class="field">
+              <label>Modalidad de entrega *</label>
+              <select id="cli-modalidad" onchange="Cart.toggleDireccion(this.value)">
+                <option value="retiro">Retiro en local (Dulces Mele)</option>
+                <option value="despacho">Despacho a domicilio</option>
+              </select>
+            </div>
+            <div class="field full" id="box-cli-direccion" style="display: none;">
+              <label>Dirección de despacho *</label>
+              <input type="text" id="cli-direccion" placeholder="Calle, número, departamento, comuna" />
+            </div>
+            <div class="field">
+              <label>Fecha en que necesitas tu pedido *</label>
+              <input type="date" id="cli-fecha" min="${minDateISO}" value="${minDateISO}" required />
+            </div>
+            <div class="field">
+              <label>Horario preferido</label>
+              <select id="cli-horario">
+                <option value="Mañana (10:00 a 13:00)">Mañana (10:00 a 13:00)</option>
+                <option value="Tarde (14:00 a 19:00)">Tarde (14:00 a 19:00)</option>
+              </select>
+            </div>
+            <div class="field full">
+              <label>Dedicatoria en la torta o indicaciones especiales</label>
+              <textarea id="cli-notas" rows="2" placeholder="Ej: Escribir 'Feliz Cumpleaños Mamá', dedicatoria, alérgenos..."></textarea>
+            </div>
+          </div>
+
+          <div style="background: var(--bg); border: 1px solid var(--line); padding: 14px; border-radius: var(--radius-sm); margin: 16px 0;">
+            <div style="font-weight: 700; margin-bottom: 4px;">Información de Pago (Transferencia Bancaria)</div>
+            <div class="text-soft" style="font-size: 13px; line-height: 1.4;">
+              Banco estado, Cuenta Rut, Rut: 14.738.359-2, Nombre: Andrea Lebanek
+            </div>
+          </div>
+
+          <div class="modal-footer" style="padding-bottom: 0;">
+            <button type="button" class="btn btn-secondary" onclick="Cart.closeCheckout()">Volver</button>
+            <button type="submit" class="btn btn-primary" style="background: #25D366; border-color: #25D366; font-size: 16px; padding: 10px 20px;">
+              Confirmar y Enviar por WhatsApp 💬
+            </button>
+          </div>
+        </form>
+      `;
+
+      document.getElementById('form-cliente-pedido').addEventListener('submit', (e) => {
+        e.preventDefault();
+        enviarPedido();
+      });
+    }
+
+    function toggleDireccion(modalidad){
+      const box = document.getElementById('box-cli-direccion');
+      box.style.display = modalidad === 'despacho' ? 'block' : 'none';
+      const input = document.getElementById('cli-direccion');
+      if (modalidad === 'despacho') input.required = true;
+      else input.required = false;
+    }
+
+function enviarPedido(){
+      const nombre = document.getElementById('cli-nombre').value.trim();
+      const telefono = document.getElementById('cli-telefono').value.trim();
+      const modalidad = document.getElementById('cli-modalidad').value;
+      const direccion = document.getElementById('cli-direccion') ? document.getElementById('cli-direccion').value.trim() : '';
+      const fecha = document.getElementById('cli-fecha').value;
+      const horario = document.getElementById('cli-horario').value;
+      const notas = document.getElementById('cli-notas').value.trim();
+
+      if (!nombre || !telefono || !fecha){
+        alert('Por favor completa todos los campos requeridos (*).');
+        return;
+      }
+
+      const itemKeys = Object.keys(items);
+      const itemsArray = itemKeys.map(id => ({
+        productoId: id,
+        nombre: items[id].producto.nombre,
+        precioUnitario: items[id].producto.precioVenta,
+        cantidad: items[id].cantidad,
+        subtotal: items[id].cantidad * items[id].producto.precioVenta,
+        tipoStock: items[id].producto.tipoStock || 'terminado'
+      }));
+
+      const total = itemsArray.reduce((sum, i) => sum + i.subtotal, 0);
+
+      // Guardar el pedido en el sistema
+      const nuevoPedido = Storage.crearPedido({
+        clienteNombre: nombre,
+        clienteTelefono: telefono,
+        tipoEntrega: modalidad,
+        direccionDespacho: direccion,
+        fechaEntrega: fecha,
+        horaEntrega: horario,
+        notas,
+        total,
+        abono: 0, 
+        medioPago: 'Transferencia',
+        origen: 'web_cliente',
+        items: itemsArray
+      });
+
+      // Si Supabase está conectado
+      if (typeof SupabaseBridge !== 'undefined' && SupabaseBridge.isConnected){
+        SupabaseBridge.enviarPedido(nuevoPedido);
+      }
+
+      // Armar el mensaje para WhatsApp
+      const config = Storage.get('configuracion') || {};
+      const businessPhone = (config.telefonoWhatsApp || '56912345678').replace(/[^\d]/g, '');
+      const itemsTxt = itemsArray.map(i => `• ${i.cantidad}x ${i.nombre} ($${i.subtotal.toLocaleString('es-CL')})`).join('%0A');
+
+      const msg = `¡Hola *Dulces Mele*! 🧁%0A%0A` +
+        `Acabo de realizar un pedido por su página web:*%0A` +
+        `📌 *Código:* ${nuevoPedido.codigo}%0A` +
+        `👤 *Cliente:* ${encodeURIComponent(nombre)}%0A` +
+        `📞 *Teléfono:* ${encodeURIComponent(telefono)}%0A` +
+        `🗓 *Fecha de entrega:* ${fecha} (${encodeURIComponent(horario)})%0A` +
+        `📦 *Modalidad:* ${modalidad === 'despacho' ? `Despacho a: ${encodeURIComponent(direccion)}` : 'Retiro en local'}%0A%0A` +
+        `*Productos:*%0A${itemsTxt}%0A%0A` +
+        `💰 *Total a transferir:* $${total.toLocaleString('es-CL')}%0A` +
+        `${notas ? `📝 *Notas / Dedicatoria:* ${encodeURIComponent(notas)}%0A` : ''}%0A` +
+        `¡Muchas gracias!`;
+
+      // Mostrar pantalla de éxito y redirigir a WhatsApp
+      const whatsappUrl = `https://wa.me/${businessPhone}?text=${msg}`;
+
+      const modalBody = document.getElementById('checkout-body');
+      modalBody.innerHTML = `
+        <div style="text-align: center; padding: 20px 10px;">
+          <div style="font-size: 54px; margin-bottom: 8px;">🎉</div>
+          <h2>¡Tu pedido fue recibido con éxito!</h2>
+          <p style="font-size: 16px;">Código de pedido: <strong style="color: var(--berry); font-size: 20px;">#${nuevoPedido.codigo}</strong></p>
+          <p class="text-soft" style="max-width: 480px; margin: 12px auto;">
+            Para coordinar los últimos detalles y enviarnos tu comprobante de transferencia, haz clic en el botón a continuación para chatear directamente con nosotros en WhatsApp.
+          </p>
+
+          <a href="${whatsappUrl}" target="_blank" class="btn btn-primary" style="background:#25D366; border-color:#25D366; font-size: 17px; padding: 12px 24px; text-decoration: none; display: inline-block; margin-top: 14px;">
+            Abrir WhatsApp y Enviar Comprobante 💬
+          </a>
+
+          <div style="margin-top: 24px;">
+            <button class="btn btn-secondary" onclick="location.reload()">Hacer otro pedido</button>
+          </div>
+        </div>
+      `;
+
+      items = {};
+      updateCartBar();
+
+      setTimeout(() => { window.open(whatsappUrl, '_blank'); }, 700);
+    }
+
+    function showToast(msg){
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      el.className = 'toast success';
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => el.remove(), 2800);
+    }
+
+    function escapeHtml(str){
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    return {
+      init, adjustQty, addToCart, removeFromCart, openCheckout, closeCheckout, toggleDireccion
+    };
+  })();
+
+  document.addEventListener('DOMContentLoaded', () => {
+    Cart.init();
+    document.getElementById('btn-ver-pedido').addEventListener('click', Cart.openCheckout);
+  });
+</script>
+
+</body>
+</html>
