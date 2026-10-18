@@ -534,7 +534,7 @@ function renderCheckoutModalContent(){
       else input.required = false;
     }
 
-function enviarPedido(){
+async function enviarPedido(){
       const nombre = document.getElementById('cli-nombre').value.trim();
       const telefono = document.getElementById('cli-telefono').value.trim();
       const modalidad = document.getElementById('cli-modalidad').value;
@@ -576,9 +576,9 @@ function enviarPedido(){
         items: itemsArray
       });
 
-      // Si Supabase está conectado
+      // 👇 ESTO ES LO NUEVO: ESPERAMOS QUE SE GUARDE EN LA NUBE PRIMERO
       if (typeof SupabaseBridge !== 'undefined' && SupabaseBridge.isConnected){
-        SupabaseBridge.enviarPedido(nuevoPedido);
+        await SupabaseBridge.enviarPedido(nuevoPedido);
       }
 
       // Armar el mensaje para WhatsApp
@@ -596,7 +596,7 @@ function enviarPedido(){
         `*Productos:*%0A${itemsTxt}%0A%0A` +
         `💰 *Total a transferir:* $${total.toLocaleString('es-CL')}%0A` +
         `${notas ? `📝 *Notas / Dedicatoria:* ${encodeURIComponent(notas)}%0A` : ''}%0A` +
-        `¡Muchas gracias!`;
+        `Les envío mi comprobante de transferencia para confirmar el pedido. ¡Muchas gracias!`;
 
       // Mostrar pantalla de éxito y redirigir a WhatsApp
       const whatsappUrl = `https://wa.me/${businessPhone}?text=${msg}`;
