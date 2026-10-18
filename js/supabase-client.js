@@ -107,10 +107,12 @@ const SupabaseBridge = (() => {
     }
   }
 
-  async function enviarPedido(pedidoData){
-    if (!client) return null;
+async function enviarPedido(pedidoData){
+    if (!client) {
+      alert("Error: El teléfono no tiene conexión a Supabase.");
+      return null;
+    }
     try {
-      // Inserción directa a la tabla, sin pasar por la función compleja
       const { data: pedData, error: pedErr } = await client.from('pedidos').insert([{
         codigo: pedidoData.codigo,
         cliente_nombre: pedidoData.clienteNombre,
@@ -129,7 +131,12 @@ const SupabaseBridge = (() => {
         estado: 'pendiente'
       }]).select();
 
-      if (pedErr) throw pedErr;
+      // ESTO HARÁ QUE EL TELÉFONO GRITE EL ERROR
+      if (pedErr) {
+        alert("Supabase rechazó el pedido: " + pedErr.message);
+        throw pedErr;
+      }
+      
       const nuevoId = pedData[0].id;
 
       if (pedidoData.items && pedidoData.items.length > 0) {
@@ -144,11 +151,14 @@ const SupabaseBridge = (() => {
         }));
         
         const { error: itemsErr } = await client.from('pedido_items').insert(itemsNube);
-        if (itemsErr) throw itemsErr;
+        if (itemsErr) {
+          alert("Supabase rechazó los productos: " + itemsErr.message);
+          throw itemsErr;
+        }
       }
       return nuevoId; 
     } catch (e){
-      console.error('Error subiendo pedido a Supabase:', e);
+      console.error('Error subiendo pedido:', e);
       return null;
     }
   }
