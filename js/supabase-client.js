@@ -11,6 +11,7 @@ const SupabaseBridge = (() => {
   let isConnected = false;
 
   function init(){
+    Storage.init();
     const config = Storage.get('configuracion') || {};
     if (config.supabaseUrl && config.supabaseAnonKey && window.supabase){
       try {
