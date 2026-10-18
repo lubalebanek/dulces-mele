@@ -1,9 +1,5 @@
 /* ============================================================
    GESTOR DE PASTELERÍA — supabase-client.js
-   Capa de integración con Supabase en la nube:
-   - Si no hay credenciales configuradas, la app funciona en modo Local
-   - Si se configuran URL y Anon Key, sincroniza pedidos y productos
-   - Soporte para Realtime (notifica a tu mamá cuando entra un pedido nuevo)
    ============================================================ */
 
 const SupabaseBridge = (() => {
@@ -11,13 +7,20 @@ const SupabaseBridge = (() => {
   let isConnected = false;
 
   function init(){
-    Storage.init();
+    Storage.init(); 
     const config = Storage.get('configuracion') || {};
     if (config.supabaseUrl && config.supabaseAnonKey && window.supabase){
       try {
         client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
         isConnected = true;
         console.log('✓ Conectado exitosamente a Supabase');
+        
+        // 1. Sincronizar pedidos de la nube al abrir el panel
+        if (window.App) {
+          sincronizarPedidos();
+        }
+
+        // 2. Escuchar nuevos pedidos en tiempo real
         subscribirCambiosEnTiempoReal();
       } catch (err){
         console.error('Error inicializando Supabase:', err);
@@ -25,7 +28,65 @@ const SupabaseBridge = (() => {
     }
   }
 
-  /* Subscripción a nuevos pedidos en tiempo real */
+  async function sincronizarPedidos() {
+    if (!client) return;
+    try {
+      const { data: pedidosNube, error: errPed } = await client.from('pedidos').select('*');
+      const { data: itemsNube, error: errItems } = await client.from('pedido_items').select('*');
+      
+      if (errPed || errItems) return;
+
+      const pedidosLocal = Storage.get('pedidos') || [];
+      let hayNuevos = false;
+
+      pedidosNube.forEach(pNube => {
+        // Si el pedido no está en la computadora, lo descargamos
+        if (!pedidosLocal.find(p => p.codigo === pNube.codigo)) {
+          const itemsDelPedido = itemsNube.filter(i => i.pedido_id === pNube.id).map(i => ({
+            productoId: i.producto_id,
+            nombre: i.nombre,
+            precioUnitario: Number(i.precio_unitario),
+            cantidad: Number(i.cantidad),
+            subtotal: Number(i.subtotal),
+            tipoStock: i.tipo_stock
+          }));
+
+          pedidosLocal.push({
+            id: pNube.id,
+            codigo: pNube.codigo,
+            clienteNombre: pNube.cliente_nombre,
+            clienteTelefono: pNube.cliente_telefono,
+            clienteEmail: pNube.cliente_email,
+            tipoEntrega: pNube.tipo_entrega,
+            direccionDespacho: pNube.direccion_despacho,
+            fechaEntrega: pNube.fecha_entrega,
+            horaEntrega: pNube.hora_entrega,
+            notas: pNube.notas,
+            total: Number(pNube.total),
+            abono: Number(pNube.abono),
+            saldoPendiente: Number(pNube.saldo_pendiente),
+            medioPago: pNube.medio_pago,
+            estado: pNube.estado,
+            origen: pNube.origen,
+            items: itemsDelPedido,
+            creadoEn: new Date(pNube.created_at).getTime()
+          });
+          hayNuevos = true;
+        }
+      });
+
+      if (hayNuevos) {
+        Storage.save('pedidos', pedidosLocal);
+        // Refrescar la pantalla si estamos viéndola
+        if (window.App && (App.currentSection === 'pedidos' || App.currentSection === 'dashboard')) {
+          App.goTo(App.currentSection);
+        }
+      }
+    } catch(e) {
+      console.error('Error sincronizando pedidos:', e);
+    }
+  }
+
   function subscribirCambiosEnTiempoReal(){
     if (!client) return;
 
@@ -33,25 +94,21 @@ const SupabaseBridge = (() => {
       .channel('pedidos-live')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pedidos' }, payload => {
         const nuevo = payload.new;
+        
+        // Cuando entra un pedido nuevo, jalamos los datos inmediatamente
+        sincronizarPedidos();
+
         if (window.App && typeof App.toast === 'function'){
           App.toast(`🧁 ¡Nuevo pedido recibido #${nuevo.codigo || ''} de ${nuevo.cliente_nombre}!`, 'success');
-          // Si estamos en la sección de pedidos o inicio, refrescar
-          if (App.currentSection === 'pedidos' || App.currentSection === 'dashboard'){
-            App.goTo(App.currentSection);
-          }
         }
       })
       .subscribe();
   }
 
-  /* Obtener productos desde Supabase */
   async function fetchProductos(){
     if (!client) return null;
     try {
-      const { data, error } = await client
-        .from('productos')
-        .select('*')
-        .eq('estado', 'activo');
+      const { data, error } = await client.from('productos').select('*').eq('estado', 'activo');
       if (error) throw error;
       return data;
     } catch (e){
@@ -60,11 +117,9 @@ const SupabaseBridge = (() => {
     }
   }
 
-  /* Enviar un pedido a Supabase */
   async function enviarPedido(pedidoData){
     if (!client) return null;
     try {
-      // Usar la función almacenada para descuento atómico de stock
       const { data, error } = await client.rpc('crear_pedido_con_descuento', {
         p_cliente_nombre: pedidoData.clienteNombre,
         p_cliente_telefono: pedidoData.clienteTelefono,
@@ -82,7 +137,7 @@ const SupabaseBridge = (() => {
       });
 
       if (error) throw error;
-      return data; // Retorna UUID del pedido creado
+      return data; 
     } catch (e){
       console.error('Error creando pedido en Supabase:', e);
       return null;
@@ -93,6 +148,7 @@ const SupabaseBridge = (() => {
     init,
     fetchProductos,
     enviarPedido,
+    sincronizarPedidos,
     get isConnected(){ return isConnected; },
     get client(){ return client; }
   };
