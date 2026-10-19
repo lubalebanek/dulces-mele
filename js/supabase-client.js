@@ -189,3 +189,10 @@ async function enviarPedido(pedidoData){
 })();
 
 document.addEventListener('DOMContentLoaded', SupabaseBridge.init);
+
+// Ejecutar la descarga de pedidos automáticamente al abrir la página
+setTimeout(() => {
+  if (typeof sincronizarPedidos === 'function') {
+    sincronizarPedidos();
+  }
+}, 1000);
