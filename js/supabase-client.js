@@ -25,60 +25,75 @@ const SupabaseBridge = (() => {
     }
   }
 
-  async function sincronizarPedidos() {
+async function sincronizarPedidos() {
     if (!client) return;
     try {
+      console.log("⏳ Buscando pedidos en la nube...");
       const { data: pedidosNube, error: errPed } = await client.from('pedidos').select('*');
       const { data: itemsNube, error: errItems } = await client.from('pedido_items').select('*');
       
-      if (errPed || errItems) return;
+      if (errPed || errItems) {
+        console.error("❌ Supabase no dejó descargar:", errPed || errItems);
+        return;
+      }
 
+      console.log("📦 Pedidos encontrados en la nube:", pedidosNube);
+      
       const pedidosLocal = Storage.get('pedidos') || [];
       let hayNuevos = false;
 
       pedidosNube.forEach(pNube => {
-        if (!pedidosLocal.find(p => p.codigo === pNube.codigo)) {
-          const itemsDelPedido = itemsNube.filter(i => i.pedido_id === pNube.id).map(i => ({
+        // Evitar duplicados revisando el ID
+        if (!pedidosLocal.find(p => p.id === pNube.id)) {
+          
+          const itemsDelPedido = (itemsNube || []).filter(i => i.pedido_id === pNube.id).map(i => ({
             productoId: i.producto_id,
-            nombre: i.nombre,
-            precioUnitario: Number(i.precio_unitario),
-            cantidad: Number(i.cantidad),
-            subtotal: Number(i.subtotal),
-            tipoStock: i.tipo_stock
+            nombre: i.nombre || 'Producto sin nombre',
+            precioUnitario: Number(i.precio_unitario) || 0,
+            cantidad: Number(i.cantidad) || 1,
+            subtotal: Number(i.subtotal) || 0,
+            tipoStock: i.tipo_stock || 'terminado'
           }));
 
           pedidosLocal.push({
             id: pNube.id,
-            codigo: pNube.codigo,
-            clienteNombre: pNube.cliente_nombre,
-            clienteTelefono: pNube.cliente_telefono,
-            clienteEmail: pNube.cliente_email,
-            tipoEntrega: pNube.tipo_entrega,
-            direccionDespacho: pNube.direccion_despacho,
-            fechaEntrega: pNube.fecha_entrega,
-            horaEntrega: pNube.hora_entrega,
-            notas: pNube.notas,
-            total: Number(pNube.total),
-            abono: Number(pNube.abono),
-            saldoPendiente: Number(pNube.saldo_pendiente),
-            medioPago: pNube.medio_pago,
-            estado: pNube.estado,
-            origen: pNube.origen,
+            codigo: pNube.codigo || 'Sin Código',
+            clienteNombre: pNube.cliente_nombre || 'Cliente web',
+            clienteTelefono: pNube.cliente_telefono || '',
+            clienteEmail: pNube.cliente_email || '',
+            tipoEntrega: pNube.tipo_entrega || 'retiro',
+            direccionDespacho: pNube.direccion_despacho || '',
+            fechaEntrega: pNube.fecha_entrega || '',
+            horaEntrega: pNube.hora_entrega || '',
+            notas: pNube.notas || '',
+            total: Number(pNube.total) || 0,
+            abono: Number(pNube.abono) || 0,
+            saldoPendiente: Number(pNube.saldo_pendiente) || 0,
+            medioPago: pNube.medio_pago || 'Transferencia',
+            estado: pNube.estado || 'pendiente',
+            origen: pNube.origen || 'web_cliente',
             items: itemsDelPedido,
-            creadoEn: new Date(pNube.created_at).getTime()
+            creadoEn: pNube.created_at ? new Date(pNube.created_at).getTime() : Date.now()
           });
           hayNuevos = true;
         }
       });
 
       if (hayNuevos) {
+        console.log("✅ Se encontraron pedidos nuevos. Guardando en memoria...");
         Storage.save('pedidos', pedidosLocal);
-        if (window.App && (App.currentSection === 'pedidos' || App.currentSection === 'dashboard')) {
-          App.goTo(App.currentSection);
+        
+        // Forzar actualización de la pantalla
+        if (window.App && typeof App.goTo === 'function') {
+          App.goTo(App.currentSection || 'pedidos');
+        } else {
+           window.location.reload(); 
         }
+      } else {
+        console.log("🤷‍♀️ No hay pedidos nuevos por descargar.");
       }
     } catch(e) {
-      console.error('Error sincronizando pedidos:', e);
+      console.error('❌ Error general sincronizando:', e);
     }
   }
 
