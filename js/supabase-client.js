@@ -190,9 +190,12 @@ async function enviarPedido(pedidoData){
 
 document.addEventListener('DOMContentLoaded', SupabaseBridge.init);
 
-// Ejecutar la descarga de pedidos automáticamente al abrir la página
-setTimeout(() => {
-  if (typeof sincronizarPedidos === 'function') {
-    sincronizarPedidos();
-  }
-}, 1000);
+// Esperar a que la página cargue y Supabase se conecte para descargar pedidos
+document.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    if (window.SupabaseBridge && typeof SupabaseBridge.sincronizarPedidos === 'function') {
+      console.log("🔄 Ejecutando sincronización automática de inicio...");
+      SupabaseBridge.sincronizarPedidos();
+    }
+  }, 1500); // Le damos 1.5 segundos de ventaja a la conexión
+});
