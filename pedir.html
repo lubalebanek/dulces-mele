@@ -577,8 +577,24 @@ async function enviarPedido(){
       });
 
       // 👇 ESTO ES LO NUEVO: ESPERAMOS QUE SE GUARDE EN LA NUBE PRIMERO
-      if (typeof SupabaseBridge !== 'undefined' && SupabaseBridge.isConnected){
-        await SupabaseBridge.enviarPedido(nuevoPedido);
+      const revertirPedidoLocal = () => {
+        Storage.eliminarPedido(nuevoPedido.id);
+        itemsArray.forEach(item => {
+          if (item.tipoStock === 'terminado' && item.productoId) {
+            Storage.restaurarStockProducto(item.productoId, item.cantidad);
+          }
+        });
+      };
+      if (typeof SupabaseBridge === 'undefined' || !SupabaseBridge.isConnected){
+        revertirPedidoLocal();
+        alert('No se pudo conectar con el sistema de pedidos. Inténtalo nuevamente en unos minutos.');
+        return;
+      }
+      const pedidoGuardado = await SupabaseBridge.enviarPedido(nuevoPedido);
+      if (!pedidoGuardado){
+        revertirPedidoLocal();
+        alert('No pudimos registrar tu pedido. No se ha enviado a WhatsApp; inténtalo nuevamente.');
+        return;
       }
 
       // Armar el mensaje para WhatsApp
