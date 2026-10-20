@@ -3,6 +3,7 @@
    ============================================================ */
 
 const SupabaseBridge = (() => {
+  const ADMIN_USER_ID = 'd5fdf151-0622-4b43-af2e-bd1f074eb7b2';
   let client = null;
   let isConnected = false;
 
@@ -14,20 +15,42 @@ const SupabaseBridge = (() => {
         client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
         isConnected = true;
         console.log('✓ Conectado exitosamente a Supabase');
-        
-        if (window.App) {
-          sincronizarPedidos();
-        }
-        subscribirCambiosEnTiempoReal();
       } catch (err){
         console.error('Error inicializando Supabase:', err);
       }
     }
   }
 
+  async function getCurrentUser(){
+    if (!client) return null;
+    const { data, error } = await client.auth.getUser();
+    if (error) return null;
+    return data.user || null;
+  }
+
+  async function signIn(email, password){
+    if (!client) throw new Error('No se pudo conectar con Supabase.');
+    return client.auth.signInWithPassword({ email, password });
+  }
+
+  async function signOut(){
+    if (!client) return;
+    return client.auth.signOut();
+  }
+
+  async function iniciarSincronizacionAdmin(){
+    const user = await getCurrentUser();
+    if (!user || user.id !== ADMIN_USER_ID) return false;
+    await sincronizarPedidos();
+    subscribirCambiosEnTiempoReal();
+    return true;
+  }
+
 async function sincronizarPedidos() {
     if (!client) return;
     try {
+      const user = await getCurrentUser();
+      if (!user || user.id !== ADMIN_USER_ID) return;
       console.log("⏳ Buscando pedidos en la nube...");
       const { data: pedidosNube, error: errPed } = await client.from('pedidos').select('*');
       const { data: itemsNube, error: errItems } = await client.from('pedido_items').select('*');
@@ -124,54 +147,28 @@ async function sincronizarPedidos() {
 
 async function enviarPedido(pedidoData){
     if (!client) {
-      alert("Error: El teléfono no tiene conexión a Supabase.");
       return null;
     }
     try {
-      const { data: pedData, error: pedErr } = await client.from('pedidos').insert([{
-        codigo: pedidoData.codigo,
-        cliente_nombre: pedidoData.clienteNombre,
-        cliente_telefono: pedidoData.clienteTelefono,
-        cliente_email: pedidoData.clienteEmail || '',
-        tipo_entrega: pedidoData.tipoEntrega,
-        direccion_despacho: pedidoData.direccionDespacho || '',
-        fecha_entrega: pedidoData.fechaEntrega,
-        hora_entrega: pedidoData.horaEntrega || '',
-        notas: pedidoData.notas || '',
-        total: pedidoData.total,
-        abono: pedidoData.abono || 0,
-        saldo_pendiente: pedidoData.saldoPendiente,
-        medio_pago: pedidoData.medioPago || 'Transferencia',
-        origen: pedidoData.origen || 'web_cliente',
-        estado: 'pendiente'
-      }]).select();
-
-      // ESTO HARÁ QUE EL TELÉFONO GRITE EL ERROR
-      if (pedErr) {
-        alert("Supabase rechazó el pedido: " + pedErr.message);
-        throw pedErr;
-      }
-      
-      const nuevoId = pedData[0].id;
-
-      if (pedidoData.items && pedidoData.items.length > 0) {
-        const itemsNube = pedidoData.items.map(i => ({
-          pedido_id: nuevoId,
+      const { data, error } = await client.rpc('crear_pedido_web', {
+        p_order: {
+          codigo: pedidoData.codigo,
+          cliente_nombre: pedidoData.clienteNombre,
+          cliente_telefono: pedidoData.clienteTelefono,
+          cliente_email: pedidoData.clienteEmail || '',
+          tipo_entrega: pedidoData.tipoEntrega,
+          direccion_despacho: pedidoData.direccionDespacho || '',
+          fecha_entrega: pedidoData.fechaEntrega,
+          hora_entrega: pedidoData.horaEntrega || '',
+          notas: pedidoData.notas || ''
+        },
+        p_items: (pedidoData.items || []).map(i => ({
           producto_id: i.productoId,
-          nombre: i.nombre,
-          cantidad: i.cantidad,
-          precio_unitario: i.precioUnitario,
-          subtotal: i.subtotal,
-          tipo_stock: i.tipoStock || 'terminado'
-        }));
-        
-        const { error: itemsErr } = await client.from('pedido_items').insert(itemsNube);
-        if (itemsErr) {
-          alert("Supabase rechazó los productos: " + itemsErr.message);
-          throw itemsErr;
-        }
-      }
-      return nuevoId; 
+          cantidad: i.cantidad
+        }))
+      });
+      if (error) throw error;
+      return data;
     } catch (e){
       console.error('Error subiendo pedido:', e);
       return null;
@@ -180,6 +177,10 @@ async function enviarPedido(pedidoData){
 
   return {
     init,
+    getCurrentUser,
+    signIn,
+    signOut,
+    iniciarSincronizacionAdmin,
     fetchProductos,
     enviarPedido,
     sincronizarPedidos,
@@ -189,13 +190,3 @@ async function enviarPedido(pedidoData){
 })();
 
 document.addEventListener('DOMContentLoaded', SupabaseBridge.init);
-
-// Esperar a que la página cargue y Supabase se conecte para descargar pedidos
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    if (window.SupabaseBridge && typeof SupabaseBridge.sincronizarPedidos === 'function') {
-      console.log("🔄 Ejecutando sincronización automática de inicio...");
-      SupabaseBridge.sincronizarPedidos();
-    }
-  }, 1500); // Le damos 1.5 segundos de ventaja a la conexión
-});
