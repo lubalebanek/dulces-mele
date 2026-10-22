@@ -133,6 +133,22 @@ async function sincronizarPedidos() {
       .subscribe();
   }
 
+async function eliminarPedido(id) {
+  if (!client) throw new Error('No hay conexión con Supabase.');
+
+  const user = await getCurrentUser();
+  if (!user || user.id !== ADMIN_USER_ID) {
+    throw new Error('No tienes autorización para eliminar pedidos.');
+  }
+
+  const { error } = await client
+    .from('pedidos')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+}
+   
   async function fetchProductos(){
     if (!client) return null;
     try {
