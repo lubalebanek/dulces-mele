@@ -622,11 +622,17 @@ const Pedidos = (() => {
         message: 'Esta acción no se puede deshacer. Si el pedido tenía stock descontado, puedes cambiar su estado a "Cancelado" para restaurar el stock.',
         confirmLabel: 'Eliminar pedido',
         danger: true,
-        onConfirm: () => {
-          Storage.eliminarPedido(id);
-          App.toast('Pedido eliminado');
-          render(container);
-        }
+       onConfirm: async () => {
+  try {
+    await SupabaseBridge.eliminarPedido(id);
+    Storage.eliminarPedido(id);
+    App.toast('Pedido eliminado');
+    render(container);
+  } catch (error) {
+    console.error('Error eliminando pedido:', error);
+    App.toast('No se pudo eliminar el pedido: ' + error.message, 'error');
+  }
+}
       });
     }
   }
