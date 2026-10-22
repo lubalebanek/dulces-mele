@@ -890,7 +890,7 @@ const Productos = (() => {
     selTipo.addEventListener('change', toggleStockField);
     toggleStockField();
 
-    overlay.querySelector('#form-producto').addEventListener('submit', (e) => {
+    overlay.querySelector('#form-producto').addEventListener('submit', async (e) => {
       e.preventDefault();
       const nombre = document.getElementById('p-nombre').value.trim();
       const categoria = document.getElementById('p-categoria').value.trim();
@@ -915,21 +915,24 @@ const Productos = (() => {
         estado: document.getElementById('p-estado').value,
         descripcion: document.getElementById('p-desc').value.trim()
       };
+      let productoNube;
+      try {
+        productoNube = await SupabaseBridge.guardarProducto(prodData, editing || null);
+      } catch (error) {
+        console.error('Error guardando producto en Supabase:', error);
+        App.toast(`No se guardó el producto en la nube: ${error.message || 'error de conexión o permisos'}`, 'error');
+        return;
+      }
 
       if (editing){
         const idx = productos.findIndex(p => p.id === editing.id);
-        productos[idx] = { ...editing, ...prodData };
+        if (idx !== -1) productos[idx] = { ...editing, ...prodData };
       }else{
-        productos.push({
-          id: Storage.generateId('prod'),
-          ...prodData,
-          stockMinimo: 5,
-          demo: false
-        });
+        productos.push({ id: productoNube.id, ...prodData, stockMinimo: 5, demo: false });
       }
       Storage.save('productos', productos);
       App.closeModal();
-      App.toast(editing ? 'Producto actualizado correctamente' : 'Producto agregado correctamente');
+      App.toast(editing ? 'Producto actualizado en Supabase' : 'Producto agregado en Supabase');
       const main = document.getElementById('main-content');
       render(main);
     });
@@ -963,3 +966,5 @@ const Productos = (() => {
 
   return { render, escapeHtml, openRecetaModal, openProduccionModal };
 })();
+
+

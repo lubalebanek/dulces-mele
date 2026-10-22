@@ -133,22 +133,6 @@ async function sincronizarPedidos() {
       .subscribe();
   }
 
-async function eliminarPedido(id) {
-  if (!client) throw new Error('No hay conexión con Supabase.');
-
-  const user = await getCurrentUser();
-  if (!user || user.id !== ADMIN_USER_ID) {
-    throw new Error('No tienes autorización para eliminar pedidos.');
-  }
-
-  const { error } = await client
-    .from('pedidos')
-    .delete()
-    .eq('id', id);
-
-  if (error) throw error;
-}
-   
   async function fetchProductos(){
     if (!client) return null;
     try {
@@ -191,14 +175,49 @@ async function enviarPedido(pedidoData){
     }
   }
 
+  async function guardarProducto(producto, existente = null){
+    if (!client) throw new Error('No hay conexión con Supabase.');
+    const user = await getCurrentUser();
+    if (!user || user.id !== ADMIN_USER_ID) throw new Error('Inicia sesión con la cuenta administradora para guardar productos.');
+
+    const columnas = {
+      nombre: 'nombre', categoria: 'categoria', precioVenta: 'precio_venta',
+      unidadVenta: 'unidad_venta', tipoStock: 'tipo_stock', stockActual: 'stock_actual',
+      descripcion: 'descripcion', imagenUrl: 'imagen_url', estado: 'estado'
+    };
+    const normalizar = (clave, valor) => ['precioVenta', 'stockActual', 'stockMinimo'].includes(clave) ? Number(valor) || 0 : (valor ?? '');
+    let payload = {};
+
+    if (existente){
+      const { data: coincidencias, error: buscarError } = await client.from('productos').select('id').eq('nombre', existente.nombre);
+      if (buscarError) throw buscarError;
+      if (!coincidencias || coincidencias.length !== 1){
+        throw new Error(coincidencias?.length > 1 ? 'Hay más de un producto con ese nombre en Supabase; no se guardó para evitar modificar el incorrecto.' : 'No encontré este producto en Supabase. No se guardaron cambios locales.');
+      }
+      for (const clave of Object.keys(columnas)){
+        if (normalizar(clave, producto[clave]) !== normalizar(clave, existente[clave])) payload[columnas[clave]] = normalizar(clave, producto[clave]);
+      }
+      if (Object.keys(payload).length === 0) return { id: coincidencias[0].id };
+      const { data, error } = await client.from('productos').update(payload).eq('id', coincidencias[0].id).select('id').single();
+      if (error) throw error;
+      return data;
+    }
+
+    for (const clave of Object.keys(columnas)) payload[columnas[clave]] = normalizar(clave, producto[clave]);
+    payload.stock_minimo = Number(producto.stockMinimo) || 5;
+    const { data, error } = await client.from('productos').insert(payload).select('id').single();
+    if (error) throw error;
+    return data;
+  }
+
   return {
     init,
     getCurrentUser,
     signIn,
     signOut,
     iniciarSincronizacionAdmin,
-    eliminarPedido,
     fetchProductos,
+    guardarProducto,
     enviarPedido,
     sincronizarPedidos,
     get isConnected(){ return isConnected; },
@@ -207,3 +226,5 @@ async function enviarPedido(pedidoData){
 })();
 
 document.addEventListener('DOMContentLoaded', SupabaseBridge.init);
+
+
