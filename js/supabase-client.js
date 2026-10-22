@@ -197,6 +197,7 @@ async function enviarPedido(pedidoData){
     signIn,
     signOut,
     iniciarSincronizacionAdmin,
+    eliminarPedido,
     fetchProductos,
     enviarPedido,
     sincronizarPedidos,
