@@ -596,6 +596,17 @@ async function enviarPedido(){
         alert('No pudimos registrar tu pedido. No se ha enviado a WhatsApp; inténtalo nuevamente.');
         return;
       }
+  
+    const pedidosLocales = Storage.get('pedidos') || [];
+    const indiceLocal = pedidosLocales.findIndex(p => p.id === nuevoPedido.id);
+
+    if (indiceLocal !== -1) {
+      pedidosLocales[indiceLocal] = {
+      ...pedidosLocales[indiceLocal],
+      id: pedidoGuardado
+      };
+      Storage.save('pedidos', pedidosLocales);
+    }
 
       // Armar el mensaje para WhatsApp
       const config = Storage.get('configuracion') || {};
