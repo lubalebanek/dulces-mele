@@ -157,11 +157,11 @@ const Dashboard = (() => {
                       </span>
                     </div>
 
-                    <div style="font-size:14px; margin-bottom:2px;">
+                    <div style="font-size:14px; margin-bottom:2px; display:flex; align-items:center; flex-wrap:wrap; gap:6px;">
                       <strong>${escapeHtml(p.clienteNombre)}</strong>
                       ${phoneClean ? `
-                        <a href="https://wa.me/${phoneClean}?text=${encodeURIComponent(`¡Hola ${p.clienteNombre || ''}! Te saludamos de Dulces Mele respecto a tu pedido #${p.codigo || ''}`)}" target="_blank" style="margin-left:6px; color:#25D366; text-decoration:none; font-weight:600; font-size:12px;">
-                          ${App.svgIcon('whatsapp')} WhatsApp
+                        <a href="https://wa.me/${phoneClean}?text=${encodeURIComponent(`¡Hola ${p.clienteNombre || ''}! Te saludamos de Dulces Mele respecto a tu pedido #${p.codigo || ''}`)}" target="_blank" style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:12px; background:#EBF7EE; color:#128C7E; border:1px solid #25D366; text-decoration:none; font-size:11px; font-weight:700;">
+                          ${App.svgIcon('whatsapp', 'style="width:13px; height:13px; min-width:13px; stroke:#128C7E;"')} WhatsApp
                         </a>
                       ` : ''}
                     </div>
