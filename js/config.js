@@ -73,8 +73,9 @@ const Config = (() => {
           <span class="badge ${config.supabaseUrl ? 'badge-sage' : 'badge-amber'}">
             ${config.supabaseUrl ? '🟢 Conexión Nube configurada' : '🟡 Modo Local (Navegador)'}
           </span>
-          <div style="margin-top: 6px;">
-            El script SQL para tus tablas está listo en: <code>supabase_schema.sql</code>
+          <div style="margin-top: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+            <span>El script SQL para tus tablas está listo en: <code>HABILITAR_PEDIDOS_SUPABASE.sql</code></span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="if(typeof SupabaseBridge !== 'undefined') SupabaseBridge.reproducirCampana()">🔔 Probar timbre de pedidos</button>
           </div>
         </div>
 
