@@ -182,8 +182,13 @@ const SupabaseBridge = (() => {
       return null;
     }
     try {
-      // 1. Guardar en tabla 'pedidos'
+      // 1. Asegurar un UUID válido para el pedido
+      const esValidoUUID = pedidoData.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pedidoData.id);
+      const pedidoId = esValidoUUID ? pedidoData.id : crypto.randomUUID();
+
+      // 2. Guardar en tabla 'pedidos' sin .select() (para no requerir permiso de lectura en clientes anónimos)
       const payloadPedido = {
+        id: pedidoId,
         codigo: pedidoData.codigo,
         cliente_nombre: pedidoData.clienteNombre,
         cliente_telefono: pedidoData.clienteTelefono,
@@ -201,42 +206,19 @@ const SupabaseBridge = (() => {
         origen: pedidoData.origen || 'web_cliente'
       };
 
-      const { data: pedidoInsertado, error: errPedido } = await client
+      console.log('⏳ Enviando pedido a Supabase...', payloadPedido);
+      const { error: errPedido } = await client
         .from('pedidos')
-        .insert([payloadPedido])
-        .select()
-        .single();
+        .insert([payloadPedido]);
 
       if (errPedido) {
-        console.warn('Inserción directa en pedidos no autorizada o fallida:', errPedido);
-        // Intentar fallback si existe la función RPC
-        try {
-          const { data: rpcData, error: errRpc } = await client.rpc('crear_pedido_con_descuento', {
-            p_cliente_nombre: pedidoData.clienteNombre,
-            p_cliente_telefono: pedidoData.clienteTelefono,
-            p_cliente_email: pedidoData.clienteEmail || '',
-            p_tipo_entrega: pedidoData.tipoEntrega,
-            p_direccion_despacho: pedidoData.direccionDespacho || '',
-            p_fecha_entrega: pedidoData.fechaEntrega,
-            p_hora_entrega: pedidoData.horaEntrega || '',
-            p_notas: pedidoData.notas || '',
-            p_total: pedidoData.total,
-            p_abono: pedidoData.abono || 0,
-            p_medio_pago: pedidoData.medioPago || 'Transferencia',
-            p_origen: pedidoData.origen || 'web_cliente',
-            p_items: pedidoData.items || []
-          });
-          if (!errRpc && rpcData) return rpcData;
-        } catch(e) {}
+        console.error('Error insertando en tabla pedidos:', errPedido);
         return null;
       }
 
-      const pedidoId = pedidoInsertado.id;
-
-      // 2. Guardar items en 'pedido_items'
+      // 3. Guardar items en 'pedido_items'
       if (pedidoData.items && pedidoData.items.length > 0) {
         const itemsPayload = pedidoData.items.map(item => {
-          // Asegurar que producto_id sea UUID válido o null
           const esUUID = item.productoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.productoId);
           return {
             pedido_id: pedidoId,
@@ -258,9 +240,10 @@ const SupabaseBridge = (() => {
         }
       }
 
+      console.log('✅ ¡Pedido guardado exitosamente en Supabase! ID:', pedidoId);
       return pedidoId;
     } catch (e){
-      console.error('Error subiendo pedido a Supabase:', e);
+      console.error('Error general subiendo pedido a Supabase:', e);
       return null;
     }
   }
