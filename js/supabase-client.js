@@ -303,6 +303,64 @@ const SupabaseBridge = (() => {
     return data;
   }
 
+  async function actualizarPedidoNube(pedido){
+    if (!client || !pedido || !pedido.id) return;
+    try {
+      const payload = {
+        abono: Number(pedido.abono) || 0,
+        saldo_pendiente: Number(pedido.saldoPendiente) || 0,
+        estado: pedido.estado || 'pendiente',
+        medio_pago: pedido.medioPago || 'Transferencia'
+      };
+      await client.from('pedidos').update(payload).eq('id', pedido.id);
+      console.log('✓ Pedido actualizado en Supabase:', pedido.codigo);
+    } catch(e) {
+      console.warn('Aviso: error actualizando pedido en Supabase:', e);
+    }
+  }
+
+  async function eliminarPedidoNube(pedidoId){
+    if (!client || !pedidoId) return;
+    try {
+      await client.from('pedidos').delete().eq('id', pedidoId);
+      console.log('✓ Pedido eliminado de Supabase:', pedidoId);
+    } catch(e) {
+      console.warn('Aviso: error eliminando pedido en Supabase:', e);
+    }
+  }
+
+  async function guardarVentasNube(ventasArray){
+    if (!client || !Array.isArray(ventasArray) || ventasArray.length === 0) return;
+    try {
+      const payload = ventasArray.map(v => ({
+        id: v.id,
+        fecha: v.fecha,
+        producto_id: (v.productoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.productoId)) ? v.productoId : null,
+        producto_nombre: v.productoNombre,
+        categoria: v.categoria || 'Encargos',
+        cantidad: Number(v.cantidad) || 1,
+        precio_unitario: Number(v.precioUnitario) || 0,
+        total: Number(v.total) || 0,
+        medio_pago: v.medioPago || 'Transferencia',
+        pedido_id: (v.pedidoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.pedidoId)) ? v.pedidoId : null
+      }));
+      await client.from('ventas').insert(payload);
+      console.log('✓ Ventas sincronizadas en Supabase:', payload.length);
+    } catch(e) {
+      console.warn('Aviso: no se pudo sincronizar ventas en Supabase:', e);
+    }
+  }
+
+  async function eliminarVentasPedidoNube(pedidoId){
+    if (!client || !pedidoId) return;
+    try {
+      await client.from('ventas').delete().eq('pedido_id', pedidoId);
+      console.log('✓ Ventas de pedido eliminadas de Supabase:', pedidoId);
+    } catch(e) {
+      console.warn('Aviso: error eliminando ventas vinculadas en Supabase:', e);
+    }
+  }
+
   return {
     init,
     getCurrentUser,
@@ -312,6 +370,10 @@ const SupabaseBridge = (() => {
     fetchProductos,
     guardarProducto,
     enviarPedido,
+    actualizarPedidoNube,
+    eliminarPedidoNube,
+    guardarVentasNube,
+    eliminarVentasPedidoNube,
     sincronizarPedidos,
     reproducirCampana,
     get isConnected(){ return isConnected; },

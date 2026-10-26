@@ -8,7 +8,7 @@
 const Ventas = (() => {
 
   const MEDIOS_PAGO = ['Efectivo', 'Transferencia', 'Débito', 'Crédito', 'Otro'];
-  let filtros = { fecha: '', producto: '', categoria: '', medioPago: '' };
+  let filtros = { fecha: '', producto: '', categoria: '', medioPago: '', origen: '' };
 
   function render(container){
     container.innerHTML = `
@@ -18,7 +18,7 @@ const Ventas = (() => {
           <div class="subtitle">Registra y controla cada venta</div>
         </div>
         <div class="header-actions">
-          <button class="btn btn-primary" id="btn-nueva-venta">${App.svgIcon('plus')} Nueva venta</button>
+          <button class="btn btn-primary" id="btn-nueva-venta">${App.svgIcon('plus')} Nueva venta directa</button>
         </div>
       </div>
 
@@ -43,7 +43,15 @@ const Ventas = (() => {
               ${MEDIOS_PAGO.map(m => `<option value="${m}">${m}</option>`).join('')}
             </select>
           </div>
-          <button class="btn btn-ghost" id="btn-limpiar-filtros">Limpiar filtros</button>
+          <div class="field">
+            <label>Origen</label>
+            <select id="f-origen">
+              <option value="">Todos</option>
+              <option value="pedido">📦 Solo Pedidos Web</option>
+              <option value="directa">🏪 Solo Ventas de Mesón</option>
+            </select>
+          </div>
+          <button class="btn btn-ghost" id="btn-limpiar-filtros" style="align-self: flex-end;">Limpiar</button>
         </div>
         <div id="ventas-table"></div>
       </div>
@@ -56,14 +64,16 @@ const Ventas = (() => {
     document.getElementById('f-producto').value = filtros.producto;
     selCat.value = filtros.categoria;
     document.getElementById('f-medio').value = filtros.medioPago;
+    document.getElementById('f-origen').value = filtros.origen;
 
     document.getElementById('btn-nueva-venta').addEventListener('click', () => openForm());
     document.getElementById('f-fecha').addEventListener('input', (e) => { filtros.fecha = e.target.value; renderTable(); });
     document.getElementById('f-producto').addEventListener('input', (e) => { filtros.producto = e.target.value; renderTable(); });
     selCat.addEventListener('change', (e) => { filtros.categoria = e.target.value; renderTable(); });
     document.getElementById('f-medio').addEventListener('change', (e) => { filtros.medioPago = e.target.value; renderTable(); });
+    document.getElementById('f-origen').addEventListener('change', (e) => { filtros.origen = e.target.value; renderTable(); });
     document.getElementById('btn-limpiar-filtros').addEventListener('click', () => {
-      filtros = { fecha: '', producto: '', categoria: '', medioPago: '' };
+      filtros = { fecha: '', producto: '', categoria: '', medioPago: '', origen: '' };
       render(container);
     });
 
@@ -75,6 +85,8 @@ const Ventas = (() => {
       if (filtros.producto) ventas = ventas.filter(v => v.productoNombre.toLowerCase().includes(filtros.producto.toLowerCase()));
       if (filtros.categoria) ventas = ventas.filter(v => v.categoria === filtros.categoria);
       if (filtros.medioPago) ventas = ventas.filter(v => v.medioPago === filtros.medioPago);
+      if (filtros.origen === 'pedido') ventas = ventas.filter(v => v.pedidoId || v.pedidoCodigo);
+      if (filtros.origen === 'directa') ventas = ventas.filter(v => !v.pedidoId && !v.pedidoCodigo);
 
       const tableEl = document.getElementById('ventas-table');
       if (ventas.length === 0){
@@ -84,12 +96,21 @@ const Ventas = (() => {
       tableEl.innerHTML = `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio unit.</th><th>Total</th><th>Medio de pago</th><th></th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Producto / Origen</th><th>Cant.</th><th>Precio unit.</th><th>Total</th><th>Medio de pago</th><th></th></tr></thead>
             <tbody>
               ${ventas.map(v => `
                 <tr>
                   <td>${App.formatDate(v.fecha)}</td>
-                  <td>${Productos.escapeHtml(v.productoNombre)} ${v.demo ? '<span class="tag-demo">EJEMPLO</span>' : ''}</td>
+                  <td>
+                    <strong>${Productos.escapeHtml(v.productoNombre)}</strong>
+                    ${v.pedidoCodigo ? `
+                      <span class="badge badge-berry" style="font-size:11px; margin-left:6px;" title="Venta originada del pedido #${v.pedidoCodigo}">
+                        📦 #${v.pedidoCodigo}
+                      </span>
+                    ` : '<span class="badge badge-neutral" style="font-size:10px; margin-left:6px;">🏪 Mesón</span>'}
+                    ${v.observaciones ? `<div class="text-soft" style="font-size:11px; margin-top:2px;">${Productos.escapeHtml(v.observaciones)}</div>` : ''}
+                    ${v.demo ? '<span class="tag-demo">EJEMPLO</span>' : ''}
+                  </td>
                   <td>${v.cantidad}</td>
                   <td>${App.formatCLP(v.precioUnitario)}</td>
                   <td><strong>${App.formatCLP(v.total)}</strong></td>

@@ -340,6 +340,105 @@ function crearPedido({
     return nuevoPedido;
   }
 
+  function registrarPedidoEnVentas(pedido){
+    if (!pedido || !pedido.items || pedido.items.length === 0) return false;
+    const ventas = get('ventas');
+    
+    // Evitar duplicados revisando pedidoId o pedidoCodigo
+    const yaExiste = ventas.some(v => v.pedidoId === pedido.id || (v.pedidoCodigo && pedido.codigo && v.pedidoCodigo === pedido.codigo));
+    if (yaExiste) return true;
+
+    const nuevasVentas = [];
+    pedido.items.forEach(item => {
+      const v = {
+        id: generateId('venta'),
+        fecha: pedido.fechaEntrega || todayISO(),
+        productoId: item.productoId || null,
+        productoNombre: item.nombre || 'Producto sin nombre',
+        categoria: item.categoria || (pedido.tipoEntrega === 'despacho' ? 'Despacho' : 'Encargos'),
+        cantidad: Number(item.cantidad) || 1,
+        precioUnitario: Number(item.precioUnitario) || 0,
+        total: Number(item.subtotal) || (Number(item.cantidad) * Number(item.precioUnitario)),
+        medioPago: pedido.medioPago || 'Transferencia',
+        observaciones: `Pedido #${pedido.codigo || ''} — Cliente: ${pedido.clienteNombre || ''}`,
+        pedidoId: pedido.id,
+        pedidoCodigo: pedido.codigo || '',
+        origen: 'pedido_web',
+        creadoEn: Date.now()
+      };
+      ventas.push(v);
+      nuevasVentas.push(v);
+    });
+
+    save('ventas', ventas);
+
+    // Marcar en memoria del pedido
+    const pedidos = get('pedidos');
+    const idx = pedidos.findIndex(p => p.id === pedido.id);
+    if (idx !== -1) {
+      pedidos[idx].registradoEnVentas = true;
+      save('pedidos', pedidos);
+    }
+
+    // Sincronizar con Supabase si está disponible
+    if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarVentasNube === 'function') {
+      SupabaseBridge.guardarVentasNube(nuevasVentas);
+    }
+
+    return true;
+  }
+
+  function removerPedidoDeVentas(pedidoId){
+    if (!pedidoId) return;
+    const ventas = get('ventas');
+    const filtradas = ventas.filter(v => v.pedidoId !== pedidoId);
+    save('ventas', filtradas);
+
+    const pedidos = get('pedidos');
+    const idx = pedidos.findIndex(p => p.id === pedidoId);
+    if (idx !== -1) {
+      pedidos[idx].registradoEnVentas = false;
+      save('pedidos', pedidos);
+    }
+
+    if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.eliminarVentasPedidoNube === 'function') {
+      SupabaseBridge.eliminarVentasPedidoNube(pedidoId);
+    }
+  }
+
+  function marcarPedidoPagado(id, medioPago = null){
+    const pedidos = get('pedidos');
+    const p = pedidos.find(item => item.id === id);
+    if (!p) return null;
+
+    const cambios = {
+      abono: Number(p.total) || 0,
+      saldoPendiente: 0,
+      pagado: true,
+      registrarComoVenta: true
+    };
+    if (medioPago) cambios.medioPago = medioPago;
+
+    return actualizarPedido(id, cambios);
+  }
+
+  function marcarPedidoPorPagar(id){
+    const pedidos = get('pedidos');
+    const p = pedidos.find(item => item.id === id);
+    if (!p) return null;
+
+    removerPedidoDeVentas(id);
+
+    const cambios = {
+      abono: 0,
+      saldoPendiente: Number(p.total) || 0,
+      pagado: false,
+      registradoEnVentas: false
+    };
+
+    return actualizarPedido(id, cambios);
+  }
+
   function actualizarPedido(id, cambios){
     const pedidos = get('pedidos');
     const idx = pedidos.findIndex(p => p.id === id);
@@ -348,50 +447,51 @@ function crearPedido({
     const anterior = pedidos[idx];
     const actualizado = { ...anterior, ...cambios };
 
-    // Si cambió abono o total, recalcular saldo
+    // Si cambió abono o total, recalcular saldo y estado pagado
     if ('abono' in cambios || 'total' in cambios){
-      actualizado.saldoPendiente = Math.max(0, (Number(actualizado.total) || 0) - (Number(actualizado.abono) || 0));
+      const totalNum = Number(actualizado.total) || 0;
+      const abonoNum = Number(actualizado.abono) || 0;
+      actualizado.saldoPendiente = Math.max(0, totalNum - abonoNum);
+      actualizado.pagado = actualizado.saldoPendiente === 0;
     }
 
-    // Si se cancela el pedido, restaurar stock de productos terminados
+    // Si se cancela el pedido, restaurar stock de productos terminados y remover ventas
     if (cambios.estado === 'cancelado' && anterior.estado !== 'cancelado'){
       actualizado.items.forEach(item => {
         if (item.tipoStock === 'terminado' && item.productoId){
           restaurarStockProducto(item.productoId, item.cantidad);
         }
       });
+      removerPedidoDeVentas(id);
+      actualizado.registradoEnVentas = false;
     }
 
-    // Si pasa a entregado y no se había registrado como venta, registrar venta opcional
-    if (cambios.estado === 'entregado' && anterior.estado !== 'entregado' && cambios.registrarComoVenta){
-      const ventas = get('ventas');
-      actualizado.items.forEach(item => {
-        ventas.push({
-          id: generateId('venta'),
-          fecha: actualizado.fechaEntrega || todayISO(),
-          productoId: item.productoId,
-          productoNombre: item.nombre,
-          categoria: 'Encargos',
-          cantidad: item.cantidad,
-          precioUnitario: item.precioUnitario,
-          total: item.subtotal,
-          medioPago: actualizado.medioPago,
-          observaciones: `Pedido ${actualizado.codigo} — Cliente: ${actualizado.clienteNombre}`,
-          pedidoId: actualizado.id
-        });
-      });
-      save('ventas', ventas);
+    // Si se marca para registrar en ventas o si pasa a pagado/entregado con registrarComoVenta
+    if (cambios.registrarComoVenta || (cambios.pagado && cambios.registrarComoVenta !== false)){
+      registrarPedidoEnVentas(actualizado);
+      actualizado.registradoEnVentas = true;
     }
 
     pedidos[idx] = actualizado;
     save('pedidos', pedidos);
+
+    // Sincronizar en la nube si está conectado
+    if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.actualizarPedidoNube === 'function') {
+      SupabaseBridge.actualizarPedidoNube(actualizado);
+    }
+
     return actualizado;
   }
 
   function eliminarPedido(id){
+    removerPedidoDeVentas(id);
     const pedidos = get('pedidos');
     const filtrados = pedidos.filter(p => p.id !== id);
     save('pedidos', filtrados);
+
+    if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.eliminarPedidoNube === 'function') {
+      SupabaseBridge.eliminarPedidoNube(id);
+    }
   }
 
   /* ---------------- Escandallo, Recetas y Costeo ---------------- */
@@ -787,6 +887,7 @@ function crearPedido({
   return {
     get, save, generateId, init, exportBackup, importBackup, eraseAll, todayISO,
     crearPedido, actualizarPedido, eliminarPedido,
+    marcarPedidoPagado, marcarPedidoPorPagar, registrarPedidoEnVentas, removerPedidoDeVentas,
     descontarStockProducto, restaurarStockProducto,
     seedPasteleriaSiCorresponde, convertirUnidad, getReceta, saveReceta, eliminarReceta,
     calcularCostoReceta, producirLote

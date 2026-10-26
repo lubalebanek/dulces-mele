@@ -180,8 +180,8 @@ const Pedidos = (() => {
                 <th>Código / Fecha</th>
                 <th>Cliente y Entrega</th>
                 <th>Productos</th>
-                <th>Total / Abono</th>
-                <th>Saldo Pendiente</th>
+                <th>Total</th>
+                <th>Estado de Pago / Saldo</th>
                 <th>Estado</th>
                 <th style="text-align: right;">Acciones</th>
               </tr>
@@ -189,7 +189,8 @@ const Pedidos = (() => {
             <tbody>
               ${lista.map(p => {
                 const esHoy = p.fechaEntrega === todayISO;
-                const tieneSaldo = Number(p.saldoPendiente) > 0;
+                const esPagado = (Number(p.saldoPendiente) <= 0) || p.pagado;
+                const tieneAbono = Number(p.abono) > 0 && !esPagado;
                 const itemsTexto = (p.items || []).map(i => `${i.cantidad}x ${escapeHtml(i.nombre)}`).join(', ');
                 const estadoBadge = getEstadoBadge(p.estado);
 
@@ -219,14 +220,39 @@ const Pedidos = (() => {
                       ${p.notas ? `<div class="text-soft" style="font-size:11px; margin-top:4px; font-style:italic;">📝 ${escapeHtml(p.notas)}</div>` : ''}
                     </td>
                     <td>
-                      <div><strong>${App.formatCLP(p.total)}</strong></div>
-                      <div class="text-soft" style="font-size:12px;">Abono: ${App.formatCLP(p.abono)}</div>
+                      <div><strong style="font-size: 15px;">${App.formatCLP(p.total)}</strong></div>
+                      ${tieneAbono ? `<div class="text-soft" style="font-size:11px;">Abono: ${App.formatCLP(p.abono)}</div>` : ''}
                     </td>
                     <td>
-                      <strong style="color: ${tieneSaldo ? 'var(--danger)' : 'var(--sage)'}; font-size:15px;">
-                        ${tieneSaldo ? App.formatCLP(p.saldoPendiente) : '✓ Pagado'}
-                      </strong>
-                      <div class="text-soft" style="font-size:11px;">${escapeHtml(p.medioPago || '')}</div>
+                      ${esPagado ? `
+                        <div>
+                          <span class="badge badge-sage" style="font-weight: 700; font-size: 12px;">🟢 Pagado</span>
+                          <div style="font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                            <span class="badge badge-neutral" style="font-size: 10px;">${p.registradoEnVentas ? '✓ En Ventas' : 'Sin venta'}</span>
+                            <button class="btn btn-ghost btn-sm" data-pago-toggle="${p.id}" data-action="por_pagar" style="font-size: 10px; padding: 2px 6px;" title="Marcar como por pagar">↩ Por pagar</button>
+                          </div>
+                        </div>
+                      ` : tieneAbono ? `
+                        <div>
+                          <span class="badge badge-amber" style="font-weight: 700; font-size: 12px;">🟡 Abono: ${App.formatCLP(p.abono)}</span>
+                          <div style="color: var(--danger); font-size: 12px; font-weight: 600; margin-top: 2px;">Saldo: ${App.formatCLP(p.saldoPendiente)}</div>
+                          <div style="margin-top: 4px;">
+                            <button class="btn btn-primary btn-sm" data-pago-toggle="${p.id}" data-action="completar_pago" style="font-size: 11px; padding: 3px 8px; background: #2D6A4F; border-color: #2D6A4F;">
+                              ✓ Completar Pago
+                            </button>
+                          </div>
+                        </div>
+                      ` : `
+                        <div>
+                          <span class="badge badge-danger" style="font-weight: 700; font-size: 12px;">🔴 Por pagar</span>
+                          <div style="margin-top: 5px;">
+                            <button class="btn btn-primary btn-sm" data-pago-toggle="${p.id}" data-action="marcar_pagado" style="font-size: 11px; padding: 4px 10px; background: #2D6A4F; border-color: #2D6A4F; font-weight: 600;">
+                              ✓ Marcar Pagado
+                            </button>
+                          </div>
+                        </div>
+                      `}
+                      <div class="text-soft" style="font-size: 11px; margin-top: 4px;">${p.medioPago === 'Efectivo' ? '💵 Efectivo' : '💳 Transferencia'}</div>
                     </td>
                     <td>
                       <span class="badge ${estadoBadge.color}">${estadoBadge.label}</span>
@@ -254,6 +280,20 @@ const Pedidos = (() => {
       listEl.querySelectorAll('[data-estado]').forEach(b => b.addEventListener('click', () => openCambiarEstadoModal(b.dataset.estado)));
       listEl.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openPedidoModal(b.dataset.edit)));
       listEl.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => handleEliminarPedido(b.dataset.del)));
+      listEl.querySelectorAll('[data-pago-toggle]').forEach(b => {
+        b.addEventListener('click', () => {
+          const id = b.dataset.pagoToggle;
+          const action = b.dataset.action;
+          if (action === 'marcar_pagado' || action === 'completar_pago') {
+            Storage.marcarPedidoPagado(id);
+            App.toast('✓ Pedido marcado como Pagado y registrado en Ventas', 'success');
+          } else if (action === 'por_pagar') {
+            Storage.marcarPedidoPorPagar(id);
+            App.toast('Pedido marcado como pendiente de pago');
+          }
+          render(container);
+        });
+      });
     }
 
     function getEstadoBadge(estado){
@@ -281,11 +321,14 @@ const Pedidos = (() => {
       return `https://wa.me/${phoneClean}?text=${msg}`;
     }
 
-    /* Modal rápido para cambiar estado */
+    /* Modal rápido para cambiar estado y pago */
     function openCambiarEstadoModal(id){
       const pedidos = Storage.get('pedidos');
       const p = pedidos.find(item => item.id === id);
       if (!p) return;
+
+      const esPagado = (Number(p.saldoPendiente) <= 0) || p.pagado;
+      const tieneAbono = Number(p.abono) > 0 && !esPagado;
 
       const overlay = App.openModal(`
         <div class="modal-header">
@@ -302,23 +345,44 @@ const Pedidos = (() => {
                 `).join('')}
               </select>
             </div>
+
             <div class="field full">
-              <label>Abono actual (CLP)</label>
+              <label>Estado del Pago</label>
+              <select id="p-estado-pago">
+                <option value="por_pagar" ${!esPagado && !tieneAbono ? 'selected' : ''}>🔴 Por pagar (Saldo: ${App.formatCLP(p.total)})</option>
+                <option value="pagado" ${esPagado ? 'selected' : ''}>🟢 Pagado en su totalidad (${App.formatCLP(p.total)})</option>
+                <option value="abono" ${tieneAbono ? 'selected' : ''}>🟡 Abono parcial...</option>
+              </select>
+            </div>
+
+            <div class="field full" id="box-abono-input" style="display: ${tieneAbono ? 'block' : 'none'};">
+              <label>Monto del Abono recibido (CLP)</label>
               <input type="number" id="p-nuevo-abono" min="0" max="${p.total}" value="${p.abono || 0}" />
               <div class="text-soft" style="font-size:12px; margin-top:4px;">
-                Total del pedido: ${App.formatCLP(p.total)}. Si pagó la totalidad, pon ${p.total}.
+                Total del pedido: ${App.formatCLP(p.total)}.
               </div>
             </div>
-            <div class="field full" id="box-venta-auto" style="display:none; background: var(--surface-2); padding:10px; border-radius: var(--radius-sm);">
-              <label style="font-weight: 600;">
-                <input type="checkbox" id="check-registrar-venta" checked />
-                Registrar automáticamente en el módulo de Ventas al marcar como Entregado
+
+            <div class="field full">
+              <label>Medio de Pago</label>
+              <select id="p-nuevo-medio">
+                <option value="Transferencia" ${p.medioPago === 'Transferencia' ? 'selected' : ''}>💳 Transferencia Bancaria</option>
+                <option value="Efectivo" ${p.medioPago === 'Efectivo' ? 'selected' : ''}>💵 Efectivo</option>
+                <option value="Débito" ${p.medioPago === 'Débito' ? 'selected' : ''}>💳 Débito</option>
+                <option value="Crédito" ${p.medioPago === 'Crédito' ? 'selected' : ''}>💳 Crédito</option>
+              </select>
+            </div>
+
+            <div class="field full" style="background: var(--surface-2); padding: 12px; border-radius: var(--radius-sm); margin-top: 6px;">
+              <label style="font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0;">
+                <input type="checkbox" id="check-registrar-venta" ${p.registradoEnVentas || esPagado ? 'checked' : ''} />
+                <span>Registrar en el módulo de <strong>Ventas</strong> (ingresos, métricas y reportes)</span>
               </label>
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-close>Cancelar</button>
-            <button type="submit" class="btn btn-primary">Actualizar estado</button>
+            <button type="submit" class="btn btn-primary">Guardar cambios</button>
           </div>
         </form>
       `);
@@ -326,26 +390,48 @@ const Pedidos = (() => {
       overlay.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', App.closeModal));
 
       const selEstado = overlay.querySelector('#p-nuevo-estado');
-      const boxVenta = overlay.querySelector('#box-venta-auto');
-      selEstado.addEventListener('change', () => {
-        boxVenta.style.display = selEstado.value === 'entregado' ? 'block' : 'none';
+      const selPago = overlay.querySelector('#p-estado-pago');
+      const boxAbono = overlay.querySelector('#box-abono-input');
+      const inputAbono = overlay.querySelector('#p-nuevo-abono');
+      const checkVenta = overlay.querySelector('#check-registrar-venta');
+
+      selPago.addEventListener('change', () => {
+        boxAbono.style.display = selPago.value === 'abono' ? 'block' : 'none';
+        if (selPago.value === 'pagado') {
+          inputAbono.value = p.total;
+          checkVenta.checked = true;
+        } else if (selPago.value === 'por_pagar') {
+          inputAbono.value = 0;
+          checkVenta.checked = false;
+        }
       });
-      if (selEstado.value === 'entregado') boxVenta.style.display = 'block';
 
       overlay.querySelector('#form-estado').addEventListener('submit', (e) => {
         e.preventDefault();
         const nuevoEstado = selEstado.value;
-        const nuevoAbono = Number(document.getElementById('p-nuevo-abono').value) || 0;
-        const registrarVenta = document.getElementById('check-registrar-venta') ? document.getElementById('check-registrar-venta').checked : false;
+        const modoPago = selPago.value;
+        const nuevoMedio = overlay.querySelector('#p-nuevo-medio').value;
+        const registrarVenta = checkVenta.checked;
 
-        Storage.actualizarPedido(p.id, {
-          estado: nuevoEstado,
-          abono: nuevoAbono,
-          registrarComoVenta: nuevoEstado === 'entregado' && registrarVenta
-        });
+        if (modoPago === 'pagado') {
+          Storage.marcarPedidoPagado(p.id, nuevoMedio);
+          Storage.actualizarPedido(p.id, { estado: nuevoEstado, registrarComoVenta: registrarVenta });
+        } else if (modoPago === 'por_pagar') {
+          Storage.marcarPedidoPorPagar(p.id);
+          Storage.actualizarPedido(p.id, { estado: nuevoEstado, medioPago: nuevoMedio });
+        } else {
+          // Abono parcial
+          const montoAbono = Number(inputAbono.value) || 0;
+          Storage.actualizarPedido(p.id, {
+            estado: nuevoEstado,
+            abono: montoAbono,
+            medioPago: nuevoMedio,
+            registrarComoVenta: registrarVenta
+          });
+        }
 
         App.closeModal();
-        App.toast('Estado de pedido actualizado correctamente');
+        App.toast('Pedido actualizado correctamente', 'success');
         render(container);
       });
     }
