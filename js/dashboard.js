@@ -157,7 +157,7 @@ const Dashboard = (() => {
                     </div>
 
                     <div style="font-size:14px; margin-bottom:2px;">
-                      <strong>${Productos.escapeHtml(p.clienteNombre)}</strong>
+                      <strong>${escapeHtml(p.clienteNombre)}</strong>
                       ${p.clienteTelefono ? `
                         <a href="${typeof Pedidos.generarLinkWhatsApp === 'function' ? Pedidos.generarLinkWhatsApp(p) : `https://wa.me/${phoneClean}`}" target="_blank" style="margin-left:6px; color:#25D366; text-decoration:none; font-weight:600; font-size:12px;">
                           ${App.svgIcon('whatsapp')} WhatsApp
@@ -166,12 +166,12 @@ const Dashboard = (() => {
                     </div>
 
                     <div class="text-soft" style="font-size:13px; margin-bottom:4px;">
-                      🧁 <strong>Pedido:</strong> ${Productos.escapeHtml(itemsResumen || 'Sin detalle de productos')}
+                      🧁 <strong>Pedido:</strong> ${escapeHtml(itemsResumen || 'Sin detalle de productos')}
                     </div>
 
                     ${p.tipoEntrega === 'despacho' && p.direccionDespacho ? `
                       <div class="text-soft" style="font-size:12px; color:var(--ink-soft);">
-                        📍 Dirección: ${Productos.escapeHtml(p.direccionDespacho)}
+                        📍 Dirección: ${escapeHtml(p.direccionDespacho)}
                       </div>
                     ` : ''}
                   </div>
@@ -362,6 +362,12 @@ const Dashboard = (() => {
         options: chartOptions(catsGasto.length === 0)
       }));
     }
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str ?? '';
+    return div.innerHTML;
   }
 
   function getEstadoLabel(estado){

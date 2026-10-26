@@ -140,13 +140,13 @@ const Ventas = (() => {
                 <tr>
                   <td>${App.formatDate(v.fecha)}</td>
                   <td>
-                    <strong>${Productos.escapeHtml(v.productoNombre)}</strong>
+                    <strong>${escapeHtmlLocal(v.productoNombre)}</strong>
                     ${v.pedidoCodigo ? `
                       <span class="badge badge-berry" style="font-size:11px; margin-left:6px;" title="Venta originada del pedido #${v.pedidoCodigo}">
                         📦 #${v.pedidoCodigo}
                       </span>
                     ` : '<span class="badge badge-neutral" style="font-size:10px; margin-left:6px;">🏪 Mesón</span>'}
-                    ${v.observaciones ? `<div class="text-soft" style="font-size:11px; margin-top:2px;">${Productos.escapeHtml(v.observaciones)}</div>` : ''}
+                    ${v.observaciones ? `<div class="text-soft" style="font-size:11px; margin-top:2px;">${escapeHtmlLocal(v.observaciones)}</div>` : ''}
                     ${v.demo ? '<span class="tag-demo">EJEMPLO</span>' : ''}
                   </td>
                   <td>${v.cantidad}</td>
@@ -203,7 +203,7 @@ const Ventas = (() => {
               <select id="pos-select-producto">
                 <option value="">-- Elige un producto --</option>
                 ${productos.map(p => `
-                  <option value="${p.id}" data-precio="${p.precioVenta}" data-nombre="${Productos.escapeHtml(p.nombre)}" data-cat="${p.categoria}" data-stock="${p.stockActual}" data-tipo="${p.tipoStock}">
+                  <option value="${p.id}" data-precio="${p.precioVenta}" data-nombre="${escapeHtmlLocal(p.nombre)}" data-cat="${p.categoria}" data-stock="${p.stockActual}" data-tipo="${p.tipoStock}">
                     ${p.nombre} — ${App.formatCLP(p.precioVenta)} ${p.tipoStock === 'terminado' ? `(Stock: ${p.stockActual})` : ''}
                   </option>
                 `).join('')}

@@ -152,7 +152,7 @@ const Reportes = (() => {
           <div style="margin-top:14px; padding:10px 14px; background:var(--surface-2); border-radius:var(--radius-sm); font-size:13px;">
             <strong>Salidas en efectivo registradas hoy:</strong>
             <ul style="margin:4px 0 0 16px; padding:0;">
-              ${gastosEfectivo.map(g => `<li>${Productos.escapeHtml(g.descripcion)}: <strong>${App.formatCLP(g.monto)}</strong> (${g.tipo || 'Gasto'})</li>`).join('')}
+              ${gastosEfectivo.map(g => `<li>${escapeHtml(g.descripcion)}: <strong>${App.formatCLP(g.monto)}</strong> (${g.tipo || 'Gasto'})</li>`).join('')}
             </ul>
           </div>
         ` : ''}
@@ -328,7 +328,7 @@ const Reportes = (() => {
                   ${rankingIngresos.slice(0, 6).map((p, idx) => `
                     <tr>
                       <td><strong>#${idx + 1}</strong></td>
-                      <td><strong>${Productos.escapeHtml(p.nombre)}</strong></td>
+                      <td><strong>${escapeHtml(p.nombre)}</strong></td>
                       <td style="text-align:center;">${p.cantidad} un.</td>
                       <td style="text-align:right; font-weight:700;">${App.formatCLP(p.total)}</td>
                       <td style="text-align:right;">${totalVentas > 0 ? Math.round((p.total / totalVentas) * 100) : 0}%</td>
@@ -433,6 +433,12 @@ const Reportes = (() => {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
     App.toast('CSV descargado con éxito');
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str ?? '';
+    return div.innerHTML;
   }
 
   function csvEscape(val){
