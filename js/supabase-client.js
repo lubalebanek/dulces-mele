@@ -1,20 +1,28 @@
 /* ============================================================
    GESTOR DE PASTELERÍA — supabase-client.js
+   Sincronización en la nube con Supabase para Dulces Mele.
    ============================================================ */
 
 const SupabaseBridge = (() => {
-  const ADMIN_USER_ID = 'd5fdf151-0622-4b43-af2e-bd1f074eb7b2';
   let client = null;
   let isConnected = false;
 
   function init(){
-    Storage.init(); 
-    const config = Storage.get('configuracion') || {};
-    if (config.supabaseUrl && config.supabaseAnonKey && window.supabase){
+    if (typeof Storage !== 'undefined' && typeof Storage.init === 'function') {
+      Storage.init();
+    }
+    const config = (typeof Storage !== 'undefined' && typeof Storage.get === 'function')
+      ? (Storage.get('configuracion') || {})
+      : {};
+
+    const supabaseUrl = config.supabaseUrl || 'https://mdbftytjmpvakibgdavt.supabase.co';
+    const supabaseAnonKey = config.supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kYmZ0eXRqbXB2YWtpYmdkYXZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNjAwOTcsImV4cCI6MjEwNzczNjA5N30.k-0H5RZsCHIPT4LUy-D-eRMQ9xQsLyJUtIS-B7nR9H4';
+
+    if (supabaseUrl && supabaseAnonKey && window.supabase){
       try {
-        client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+        client = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
         isConnected = true;
-        console.log('✓ Conectado exitosamente a Supabase');
+        console.log('✓ Conectado exitosamente a Supabase (Dulces Mele)');
       } catch (err){
         console.error('Error inicializando Supabase:', err);
       }
@@ -23,9 +31,13 @@ const SupabaseBridge = (() => {
 
   async function getCurrentUser(){
     if (!client) return null;
-    const { data, error } = await client.auth.getUser();
-    if (error) return null;
-    return data.user || null;
+    try {
+      const { data, error } = await client.auth.getUser();
+      if (error) return null;
+      return data.user || null;
+    } catch (e) {
+      return null;
+    }
   }
 
   async function signIn(email, password){
@@ -40,35 +52,35 @@ const SupabaseBridge = (() => {
 
   async function iniciarSincronizacionAdmin(){
     const user = await getCurrentUser();
-    if (!user || user.id !== ADMIN_USER_ID) return false;
+    if (!user) return false;
     await sincronizarPedidos();
     subscribirCambiosEnTiempoReal();
     return true;
   }
 
-async function sincronizarPedidos() {
+  async function sincronizarPedidos() {
     if (!client) return;
     try {
       const user = await getCurrentUser();
-      if (!user || user.id !== ADMIN_USER_ID) return;
+      if (!user) return;
       console.log("⏳ Buscando pedidos en la nube...");
-      const { data: pedidosNube, error: errPed } = await client.from('pedidos').select('*');
+      const { data: pedidosNube, error: errPed } = await client.from('pedidos').select('*').order('created_at', { ascending: false });
       const { data: itemsNube, error: errItems } = await client.from('pedido_items').select('*');
       
       if (errPed || errItems) {
-        console.error("❌ Supabase no dejó descargar:", errPed || errItems);
+        console.warn("Aviso al descargar de Supabase:", errPed || errItems);
         return;
       }
 
-      console.log("📦 Pedidos encontrados en la nube:", pedidosNube);
+      console.log("📦 Pedidos encontrados en la nube:", pedidosNube?.length || 0);
       
       const pedidosLocal = Storage.get('pedidos') || [];
       let hayNuevos = false;
 
-      pedidosNube.forEach(pNube => {
-        // Evitar duplicados revisando el ID
-        if (!pedidosLocal.find(p => p.id === pNube.id)) {
-          
+      (pedidosNube || []).forEach(pNube => {
+        // Evitar duplicados por id o por código correlativo
+        const yaExiste = pedidosLocal.find(p => p.id === pNube.id || (p.codigo && pNube.codigo && p.codigo === pNube.codigo));
+        if (!yaExiste) {
           const itemsDelPedido = (itemsNube || []).filter(i => i.pedido_id === pNube.id).map(i => ({
             productoId: i.producto_id,
             nombre: i.nombre || 'Producto sin nombre',
@@ -103,34 +115,53 @@ async function sincronizarPedidos() {
       });
 
       if (hayNuevos) {
-        console.log("✅ Se encontraron pedidos nuevos. Guardando en memoria...");
+        console.log("✅ Se encontraron pedidos nuevos. Guardando en memoria local...");
         Storage.save('pedidos', pedidosLocal);
         
-        // Forzar actualización de la pantalla
+        // Refrescar vista actual
         if (window.App && typeof App.goTo === 'function') {
           App.goTo(App.currentSection || 'pedidos');
-        } else {
-           window.location.reload(); 
         }
-      } else {
-        console.log("🤷‍♀️ No hay pedidos nuevos por descargar.");
       }
     } catch(e) {
-      console.error('❌ Error general sincronizando:', e);
+      console.error('❌ Error sincronizando pedidos:', e);
     }
+  }
+
+  function reproducirCampana(){
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.18); // A5
+      gain.gain.setValueAtTime(0.35, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+    } catch(e) {}
   }
 
   function subscribirCambiosEnTiempoReal(){
     if (!client) return;
-    client
-      .channel('pedidos-live')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pedidos' }, payload => {
-        sincronizarPedidos();
-        if (window.App && typeof App.toast === 'function'){
-          App.toast(`🧁 ¡Nuevo pedido recibido #${payload.new.codigo || ''} de ${payload.new.cliente_nombre}!`, 'success');
-        }
-      })
-      .subscribe();
+    try {
+      client
+        .channel('pedidos-live')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pedidos' }, payload => {
+          sincronizarPedidos();
+          reproducirCampana();
+          if (window.App && typeof App.toast === 'function'){
+            App.toast(`🧁 ¡Nuevo pedido recibido #${payload.new.codigo || ''} de ${payload.new.cliente_nombre}!`, 'success');
+          }
+        })
+        .subscribe();
+    } catch(e) {
+      console.warn('No se pudo activar tiempo real:', e);
+    }
   }
 
   async function fetchProductos(){
@@ -145,32 +176,91 @@ async function sincronizarPedidos() {
     }
   }
 
-async function enviarPedido(pedidoData){
+  async function enviarPedido(pedidoData){
     if (!client) {
+      console.warn('Supabase no está conectado.');
       return null;
     }
     try {
-      const { data, error } = await client.rpc('crear_pedido_web', {
-        p_order: {
-          codigo: pedidoData.codigo,
-          cliente_nombre: pedidoData.clienteNombre,
-          cliente_telefono: pedidoData.clienteTelefono,
-          cliente_email: pedidoData.clienteEmail || '',
-          tipo_entrega: pedidoData.tipoEntrega,
-          direccion_despacho: pedidoData.direccionDespacho || '',
-          fecha_entrega: pedidoData.fechaEntrega,
-          hora_entrega: pedidoData.horaEntrega || '',
-          notas: pedidoData.notas || ''
-        },
-        p_items: (pedidoData.items || []).map(i => ({
-          producto_id: i.productoId,
-          cantidad: i.cantidad
-        }))
-      });
-      if (error) throw error;
-      return data;
+      // 1. Guardar en tabla 'pedidos'
+      const payloadPedido = {
+        codigo: pedidoData.codigo,
+        cliente_nombre: pedidoData.clienteNombre,
+        cliente_telefono: pedidoData.clienteTelefono,
+        cliente_email: pedidoData.clienteEmail || '',
+        tipo_entrega: pedidoData.tipoEntrega || 'retiro',
+        direccion_despacho: pedidoData.direccionDespacho || '',
+        fecha_entrega: pedidoData.fechaEntrega,
+        hora_entrega: pedidoData.horaEntrega || '',
+        notas: pedidoData.notas || '',
+        total: Number(pedidoData.total) || 0,
+        abono: Number(pedidoData.abono) || 0,
+        saldo_pendiente: Number(pedidoData.saldoPendiente ?? (pedidoData.total - (pedidoData.abono || 0))) || 0,
+        medio_pago: pedidoData.medioPago || 'Transferencia',
+        estado: pedidoData.estado || 'pendiente',
+        origen: pedidoData.origen || 'web_cliente'
+      };
+
+      const { data: pedidoInsertado, error: errPedido } = await client
+        .from('pedidos')
+        .insert([payloadPedido])
+        .select()
+        .single();
+
+      if (errPedido) {
+        console.warn('Inserción directa en pedidos no autorizada o fallida:', errPedido);
+        // Intentar fallback si existe la función RPC
+        try {
+          const { data: rpcData, error: errRpc } = await client.rpc('crear_pedido_con_descuento', {
+            p_cliente_nombre: pedidoData.clienteNombre,
+            p_cliente_telefono: pedidoData.clienteTelefono,
+            p_cliente_email: pedidoData.clienteEmail || '',
+            p_tipo_entrega: pedidoData.tipoEntrega,
+            p_direccion_despacho: pedidoData.direccionDespacho || '',
+            p_fecha_entrega: pedidoData.fechaEntrega,
+            p_hora_entrega: pedidoData.horaEntrega || '',
+            p_notas: pedidoData.notas || '',
+            p_total: pedidoData.total,
+            p_abono: pedidoData.abono || 0,
+            p_medio_pago: pedidoData.medioPago || 'Transferencia',
+            p_origen: pedidoData.origen || 'web_cliente',
+            p_items: pedidoData.items || []
+          });
+          if (!errRpc && rpcData) return rpcData;
+        } catch(e) {}
+        return null;
+      }
+
+      const pedidoId = pedidoInsertado.id;
+
+      // 2. Guardar items en 'pedido_items'
+      if (pedidoData.items && pedidoData.items.length > 0) {
+        const itemsPayload = pedidoData.items.map(item => {
+          // Asegurar que producto_id sea UUID válido o null
+          const esUUID = item.productoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.productoId);
+          return {
+            pedido_id: pedidoId,
+            producto_id: esUUID ? item.productoId : null,
+            nombre: item.nombre,
+            precio_unitario: Number(item.precioUnitario) || 0,
+            cantidad: Number(item.cantidad) || 1,
+            subtotal: Number(item.subtotal) || 0,
+            tipo_stock: item.tipoStock || 'terminado'
+          };
+        });
+
+        const { error: errItems } = await client
+          .from('pedido_items')
+          .insert(itemsPayload);
+
+        if (errItems) {
+          console.warn('Aviso al insertar items en Supabase:', errItems);
+        }
+      }
+
+      return pedidoId;
     } catch (e){
-      console.error('Error subiendo pedido:', e);
+      console.error('Error subiendo pedido a Supabase:', e);
       return null;
     }
   }
@@ -178,7 +268,7 @@ async function enviarPedido(pedidoData){
   async function guardarProducto(producto, existente = null){
     if (!client) throw new Error('No hay conexión con Supabase.');
     const user = await getCurrentUser();
-    if (!user || user.id !== ADMIN_USER_ID) throw new Error('Inicia sesión con la cuenta administradora para guardar productos.');
+    if (!user) throw new Error('Inicia sesión en el panel de administración para guardar productos en la nube.');
 
     const columnas = {
       nombre: 'nombre', categoria: 'categoria', precioVenta: 'precio_venta',
@@ -226,5 +316,3 @@ async function enviarPedido(pedidoData){
 })();
 
 document.addEventListener('DOMContentLoaded', SupabaseBridge.init);
-
-

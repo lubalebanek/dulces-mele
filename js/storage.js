@@ -31,6 +31,9 @@ const Storage = (() => {
     try{
       const raw = localStorage.getItem(KEYS[key]);
       let data = raw ? JSON.parse(raw) : (key === 'configuracion' ? defaultConfig() : []);
+      if (key === 'configuracion') {
+        data = { ...defaultConfig(), ...(raw ? JSON.parse(raw) : {}) };
+      }
       
       // Migración suave: asegurar tipoStock y stockActual en productos existentes
       if (key === 'productos' && Array.isArray(data)){
