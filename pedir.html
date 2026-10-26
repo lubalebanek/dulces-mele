@@ -242,21 +242,31 @@
     async function init(){
       Storage.init();
       // Si Supabase está conectado, sincronizar productos frescos desde la nube
-      if (typeof SupabaseBridge !== 'undefined' && SupabaseBridge.isConnected){
-        const prodsNube = await SupabaseBridge.fetchProductos();
-        if (prodsNube && prodsNube.length > 0){
-          Storage.save('productos', prodsNube.map(p => ({
-            id: p.id,
-            nombre: p.nombre,
-            categoria: p.categoria,
-            precioVenta: Number(p.precio_venta),
-            unidadVenta: p.unidad_venta,
-            tipoStock: p.tipo_stock,
-            stockActual: Number(p.stock_actual),
-            stockMinimo: Number(p.stock_minimo),
-            descripcion: p.descripcion,
-            estado: p.estado
-          })));
+      if (typeof SupabaseBridge !== 'undefined'){
+        if (!SupabaseBridge.isConnected) {
+          SupabaseBridge.init();
+        }
+        if (SupabaseBridge.isConnected) {
+          try {
+            const prodsNube = await SupabaseBridge.fetchProductos();
+            if (prodsNube && prodsNube.length > 0){
+              Storage.save('productos', prodsNube.map(p => ({
+                id: p.id,
+                nombre: p.nombre,
+                categoria: p.categoria,
+                precioVenta: Number(p.precio_venta),
+                unidadVenta: p.unidad_venta,
+                tipoStock: p.tipo_stock,
+                stockActual: Number(p.stock_actual),
+                stockMinimo: Number(p.stock_minimo),
+                descripcion: p.descripcion,
+                imagenUrl: p.imagen_url || '',
+                estado: p.estado
+              })));
+            }
+          } catch(err) {
+            console.warn('Aviso al traer productos de Supabase:', err);
+          }
         }
       }
       renderCategorias();
@@ -306,6 +316,11 @@
         return `
           <div class="product-card" id="card-${p.id}">
             <div>
+              ${p.imagenUrl ? `
+                <div style="width: 100%; height: 160px; border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 12px; background: var(--surface-2);">
+                  <img src="${escapeHtml(p.imagenUrl)}" alt="${escapeHtml(p.nombre)}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.parentElement.style.display='none'" />
+                </div>
+              ` : ''}
               <div class="product-header">
                 <h3 class="product-title">${escapeHtml(p.nombre)}</h3>
                 <span class="product-price">${formatCLP(p.precioVenta)}</span>
@@ -576,37 +591,30 @@ async function enviarPedido(){
         items: itemsArray
       });
 
-      // 👇 ESTO ES LO NUEVO: ESPERAMOS QUE SE GUARDE EN LA NUBE PRIMERO
-      const revertirPedidoLocal = () => {
-        Storage.eliminarPedido(nuevoPedido.id);
-        itemsArray.forEach(item => {
-          if (item.tipoStock === 'terminado' && item.productoId) {
-            Storage.restaurarStockProducto(item.productoId, item.cantidad);
+      // Guardar en la nube (Supabase)
+      let pedidoGuardado = null;
+      if (typeof SupabaseBridge !== 'undefined'){
+        if (!SupabaseBridge.isConnected) SupabaseBridge.init();
+        if (SupabaseBridge.isConnected) {
+          try {
+            pedidoGuardado = await SupabaseBridge.enviarPedido(nuevoPedido);
+          } catch(e) {
+            console.warn('Aviso: no se pudo sincronizar de inmediato con Supabase:', e);
           }
-        });
-      };
-      if (typeof SupabaseBridge === 'undefined' || !SupabaseBridge.isConnected){
-        revertirPedidoLocal();
-        alert('No se pudo conectar con el sistema de pedidos. Inténtalo nuevamente en unos minutos.');
-        return;
+        }
       }
-      const pedidoGuardado = await SupabaseBridge.enviarPedido(nuevoPedido);
-      if (!pedidoGuardado){
-        revertirPedidoLocal();
-        alert('No pudimos registrar tu pedido. No se ha enviado a WhatsApp; inténtalo nuevamente.');
-        return;
-      }
-  
-    const pedidosLocales = Storage.get('pedidos') || [];
-    const indiceLocal = pedidosLocales.findIndex(p => p.id === nuevoPedido.id);
 
-    if (indiceLocal !== -1) {
-      pedidosLocales[indiceLocal] = {
-      ...pedidosLocales[indiceLocal],
-      id: pedidoGuardado
-      };
-      Storage.save('pedidos', pedidosLocales);
-    }
+      if (pedidoGuardado) {
+        const pedidosLocales = Storage.get('pedidos') || [];
+        const indiceLocal = pedidosLocales.findIndex(p => p.id === nuevoPedido.id);
+        if (indiceLocal !== -1) {
+          pedidosLocales[indiceLocal] = {
+            ...pedidosLocales[indiceLocal],
+            id: pedidoGuardado
+          };
+          Storage.save('pedidos', pedidosLocales);
+        }
+      }
 
       // Armar el mensaje para WhatsApp
       const config = Storage.get('configuracion') || {};
