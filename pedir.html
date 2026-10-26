@@ -549,7 +549,13 @@ function renderCheckoutModalContent(){
       else input.required = false;
     }
 
-async function enviarPedido(){
+    async function enviarPedido(){
+      const submitBtn = document.querySelector('#form-cliente-pedido button[type="submit"]');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '⏳ Registrando pedido...';
+      }
+
       const nombre = document.getElementById('cli-nombre').value.trim();
       const telefono = document.getElementById('cli-telefono').value.trim();
       const modalidad = document.getElementById('cli-modalidad').value;
@@ -560,6 +566,10 @@ async function enviarPedido(){
 
       if (!nombre || !telefono || !fecha){
         alert('Por favor completa todos los campos requeridos (*).');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'Confirmar y Enviar por WhatsApp 💬';
+        }
         return;
       }
 
@@ -659,7 +669,14 @@ async function enviarPedido(){
       items = {};
       updateCartBar();
 
-      setTimeout(() => { window.open(whatsappUrl, '_blank'); }, 700);
+      // Redirigir a WhatsApp (compatible con móviles y escritorio sin bloqueo de popups)
+      setTimeout(() => {
+        try {
+          window.location.href = whatsappUrl;
+        } catch(e) {
+          window.open(whatsappUrl, '_blank');
+        }
+      }, 500);
     }
 
     function showToast(msg){
