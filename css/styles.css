@@ -64,6 +64,7 @@ p{ margin: 0 0 8px 0; }
 button, input, select, textarea{ font-family: inherit; font-size: inherit; color: inherit; }
 
 a{ color: var(--accent-dark); }
+a > svg{ width: 14px; height: 14px; vertical-align: middle; }
 
 ::selection{ background: var(--accent-soft); }
 
