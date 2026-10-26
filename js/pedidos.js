@@ -933,5 +933,5 @@ Medio: ${p.medioPago || 'Transferencia'}
     overlay.querySelector('#btn-imprimir-hoja-footer').addEventListener('click', triggerPrint);
   }
 
-  return { render, openTicketModal, openHojaTicketsModal, escapeHtml };
+  return { render, openTicketModal, openHojaTicketsModal, openPedidoModal, openCambiarEstadoModal, generarLinkWhatsApp, escapeHtml };
 })();
