@@ -186,6 +186,44 @@
     border-radius: 999px;
     font-weight: 600;
   }
+
+  /* Ajustes específicos para móviles */
+  @media (max-width: 600px) {
+    .store-container {
+      padding: 12px 12px 100px 12px;
+    }
+    .store-hero {
+      padding: 24px 16px;
+      margin-bottom: 16px;
+    }
+    .modal-overlay {
+      padding: 0;
+      align-items: flex-end;
+    }
+    .modal.modal-lg {
+      max-width: 100%;
+      width: 100%;
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+      max-height: 92vh;
+      padding: 20px 16px calc(24px + env(safe-area-inset-bottom, 10px)) 16px;
+    }
+    .form-grid {
+      grid-template-columns: 1fr !important;
+      gap: 12px;
+    }
+    .modal-footer {
+      flex-direction: column-reverse !important;
+      gap: 10px !important;
+      padding-top: 14px;
+    }
+    .modal-footer .btn {
+      width: 100% !important;
+      justify-content: center;
+      padding: 12px 16px !important;
+      font-size: 15px !important;
+    }
+  }
 </style>
 </head>
 <body>
@@ -519,16 +557,34 @@ function renderCheckoutModalContent(){
             </div>
           </div>
 
-          <div style="background: var(--bg); border: 1px solid var(--line); padding: 14px; border-radius: var(--radius-sm); margin: 16px 0;">
-            <div style="font-weight: 700; margin-bottom: 4px;">Información de Pago (Transferencia Bancaria)</div>
-            <div class="text-soft" style="font-size: 13px; line-height: 1.4;">
-              Banco estado, Cuenta Rut, Rut: 14.738.359-2, Nombre: Andrea Lebanek
+          <div class="field full" style="margin-top: 14px;">
+            <label style="font-weight: 600; display: block; margin-bottom: 6px;">Medio de Pago *</label>
+            <select id="cli-medio-pago" onchange="Cart.toggleMedioPago(this.value)" style="width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 14px; background: var(--surface);">
+              <option value="Transferencia">💳 Transferencia Bancaria</option>
+              <option value="Efectivo">💵 Pago en Efectivo (al retirar o recibir)</option>
+            </select>
+          </div>
+
+          <!-- Información de Transferencia -->
+          <div id="box-pago-transferencia" style="background: var(--bg); border: 1px solid var(--line); padding: 14px; border-radius: var(--radius-sm); margin: 14px 0;">
+            <div style="font-weight: 700; margin-bottom: 6px; color: var(--ink);">💳 Datos para Transferencia Bancaria</div>
+            <div class="text-soft" style="font-size: 13px; line-height: 1.5;">
+              Banco estado, Cuenta Rut, Rut: 14.738.359-2, Nombre: Andrea Lebanek<br>
+              <span style="font-size: 12px; color: var(--berry); font-weight: 600;">* Enviarás el comprobante por WhatsApp al coordinar.</span>
+            </div>
+          </div>
+
+          <!-- Información de Efectivo -->
+          <div id="box-pago-efectivo" style="background: #F4FAF6; border: 1px solid #C8E5D3; padding: 14px; border-radius: var(--radius-sm); margin: 14px 0; display: none;">
+            <div style="font-weight: 700; margin-bottom: 4px; color: #2D6A4F;">💵 Pago en Efectivo</div>
+            <div style="font-size: 13px; line-height: 1.4; color: #355E49;">
+              Pagas al momento de retirar en local o al recibir tu despacho. Si necesitas vuelto de algún billete en específico, indícalo en las notas de arriba.
             </div>
           </div>
 
           <div class="modal-footer" style="padding-bottom: 0;">
-            <button type="button" class="btn btn-secondary" onclick="Cart.closeCheckout()">Volver</button>
-            <button type="submit" class="btn btn-primary" style="background: #25D366; border-color: #25D366; font-size: 16px; padding: 10px 20px;">
+            <button type="button" class="btn btn-secondary" onclick="Cart.closeCheckout()">Volver / Modificar pedido</button>
+            <button type="submit" class="btn btn-primary" style="background: #25D366; border-color: #25D366; font-size: 16px; padding: 12px 20px;">
               Confirmar y Enviar por WhatsApp 💬
             </button>
           </div>
@@ -549,6 +605,13 @@ function renderCheckoutModalContent(){
       else input.required = false;
     }
 
+    function toggleMedioPago(metodo){
+      const boxTransf = document.getElementById('box-pago-transferencia');
+      const boxEfec = document.getElementById('box-pago-efectivo');
+      if (boxTransf) boxTransf.style.display = metodo === 'Transferencia' ? 'block' : 'none';
+      if (boxEfec) boxEfec.style.display = metodo === 'Efectivo' ? 'block' : 'none';
+    }
+
     async function enviarPedido(){
       const submitBtn = document.querySelector('#form-cliente-pedido button[type="submit"]');
       if (submitBtn) {
@@ -560,6 +623,7 @@ function renderCheckoutModalContent(){
       const telefono = document.getElementById('cli-telefono').value.trim();
       const modalidad = document.getElementById('cli-modalidad').value;
       const direccion = document.getElementById('cli-direccion') ? document.getElementById('cli-direccion').value.trim() : '';
+      const medioPago = document.getElementById('cli-medio-pago') ? document.getElementById('cli-medio-pago').value : 'Transferencia';
       const fecha = document.getElementById('cli-fecha').value;
       const horario = document.getElementById('cli-horario').value;
       const notas = document.getElementById('cli-notas').value.trim();
@@ -596,7 +660,7 @@ function renderCheckoutModalContent(){
         notas,
         total,
         abono: 0, 
-        medioPago: 'Transferencia',
+        medioPago,
         origen: 'web_cliente',
         items: itemsArray
       });
@@ -637,9 +701,10 @@ function renderCheckoutModalContent(){
         `👤 *Cliente:* ${encodeURIComponent(nombre)}%0A` +
         `📞 *Teléfono:* ${encodeURIComponent(telefono)}%0A` +
         `🗓 *Fecha de entrega:* ${fecha} (${encodeURIComponent(horario)})%0A` +
-        `📦 *Modalidad:* ${modalidad === 'despacho' ? `Despacho a: ${encodeURIComponent(direccion)}` : 'Retiro en local'}%0A%0A` +
+        `📦 *Modalidad:* ${modalidad === 'despacho' ? `Despacho a: ${encodeURIComponent(direccion)}` : 'Retiro en local'}%0A` +
+        `💳 *Medio de pago:* ${encodeURIComponent(medioPago)}%0A%0A` +
         `*Productos:*%0A${itemsTxt}%0A%0A` +
-        `💰 *Total a transferir:* $${total.toLocaleString('es-CL')}%0A` +
+        `💰 *Total a ${medioPago === 'Efectivo' ? 'pagar' : 'transferir'}:* $${total.toLocaleString('es-CL')}%0A` +
         `${notas ? `📝 *Notas / Dedicatoria:* ${encodeURIComponent(notas)}%0A` : ''}%0A` +
         `¡Muchas gracias!`;
 
@@ -657,16 +722,18 @@ function renderCheckoutModalContent(){
           <div style="font-size: 54px; margin-bottom: 8px;">🎉</div>
           <h2>¡Tu pedido fue recibido con éxito!</h2>
           <p style="font-size: 16px;">Código de pedido: <strong style="color: var(--berry); font-size: 20px;">#${nuevoPedido.codigo}</strong></p>
-          <p class="text-soft" style="max-width: 480px; margin: 12px auto;">
-            Para coordinar los últimos detalles y enviarnos tu comprobante de transferencia, haz clic en el botón a continuación para chatear directamente con nosotros en WhatsApp.
+          <p class="text-soft" style="max-width: 480px; margin: 12px auto; font-size: 14px;">
+            ${medioPago === 'Efectivo'
+              ? 'Tu pedido quedó agendado con pago en efectivo. Haz clic en el botón verde para enviarnos el detalle por WhatsApp y coordinar la entrega.'
+              : 'Para coordinar los últimos detalles y enviarnos tu comprobante de transferencia, haz clic en el botón verde a continuación.'}
           </p>
 
-          <a href="${whatsappUrl}" target="_blank" class="btn btn-primary" style="background:#25D366; border-color:#25D366; font-size: 17px; padding: 12px 24px; text-decoration: none; display: inline-block; margin-top: 14px;">
-            Abrir WhatsApp y Enviar Comprobante 💬
+          <a href="${whatsappUrl}" target="_blank" class="btn btn-primary" style="background:#25D366; border-color:#25D366; font-size: 16px; padding: 14px 20px; text-decoration: none; display: flex; align-items: center; justify-content: center; margin-top: 14px; width: 100%; border-radius: var(--radius-sm); font-weight: 700;">
+            ${medioPago === 'Efectivo' ? 'Enviar Pedido por WhatsApp 💬' : 'Abrir WhatsApp y Enviar Comprobante 💬'}
           </a>
 
-          <div style="margin-top: 24px;">
-            <button class="btn btn-secondary" onclick="location.reload()">Hacer otro pedido</button>
+          <div style="margin-top: 14px;">
+            <button class="btn btn-secondary" onclick="location.reload()" style="width: 100%; padding: 12px;">Hacer otro pedido</button>
           </div>
         </div>
       `;
@@ -699,7 +766,7 @@ function renderCheckoutModalContent(){
     }
 
     return {
-      init, adjustQty, addToCart, removeFromCart, openCheckout, closeCheckout, toggleDireccion
+      init, adjustQty, addToCart, removeFromCart, openCheckout, closeCheckout, toggleDireccion, toggleMedioPago
     };
   })();
 
