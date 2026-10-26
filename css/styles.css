@@ -1273,3 +1273,21 @@ tbody tr:hover{ background: var(--surface-2); }
   margin-top: 14px;
 }
 
+/* Reglas de impresión limpias para tickets y reportes */
+@media print {
+  .sidebar, .mobile-topbar, .bottom-nav, .no-print, .header-actions, .filters-bar, .modal-close {
+    display: none !important;
+  }
+  body, .app-shell, .main-column, .main {
+    background: #fff !important;
+    color: #000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .card, .modal {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+}
+
