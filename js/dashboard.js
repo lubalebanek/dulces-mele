@@ -15,7 +15,8 @@ const Dashboard = (() => {
   }
 
   function render(container){
-    const ventas = Storage.get('ventas') || [];
+    try {
+      const ventas = Storage.get('ventas') || [];
     const gastos = Storage.get('gastos') || [];
     const productos = Storage.get('productos') || [];
     const insumos = Storage.get('insumos') || [];
@@ -53,7 +54,7 @@ const Dashboard = (() => {
     const pedidosManana = pedidos.filter(p => p.fechaEntrega === manana && p.estado !== 'cancelado');
     const pedidosProximos = pedidos
       .filter(p => (p.fechaEntrega === hoy || p.fechaEntrega === manana) && p.estado !== 'cancelado')
-      .sort((a, b) => a.fechaEntrega.localeCompare(b.fechaEntrega) || (a.horaEntrega || '').localeCompare(b.horaEntrega || ''));
+      .sort((a, b) => ((a.fechaEntrega || '').localeCompare(b.fechaEntrega || '')) || ((a.horaEntrega || '').localeCompare(b.horaEntrega || '')));
 
     const saldosPendientesTotal = pedidos
       .filter(p => p.estado !== 'entregado' && p.estado !== 'cancelado')
@@ -158,8 +159,8 @@ const Dashboard = (() => {
 
                     <div style="font-size:14px; margin-bottom:2px;">
                       <strong>${escapeHtml(p.clienteNombre)}</strong>
-                      ${p.clienteTelefono ? `
-                        <a href="${typeof Pedidos.generarLinkWhatsApp === 'function' ? Pedidos.generarLinkWhatsApp(p) : `https://wa.me/${phoneClean}`}" target="_blank" style="margin-left:6px; color:#25D366; text-decoration:none; font-weight:600; font-size:12px;">
+                      ${phoneClean ? `
+                        <a href="https://wa.me/${phoneClean}?text=${encodeURIComponent(`¡Hola ${p.clienteNombre || ''}! Te saludamos de Dulces Mele respecto a tu pedido #${p.codigo || ''}`)}" target="_blank" style="margin-left:6px; color:#25D366; text-decoration:none; font-weight:600; font-size:12px;">
                           ${App.svgIcon('whatsapp')} WhatsApp
                         </a>
                       ` : ''}
@@ -273,15 +274,15 @@ const Dashboard = (() => {
     document.getElementById('btn-dash-pos')?.addEventListener('click', () => {
       App.goTo('ventas');
       setTimeout(() => {
-        if (typeof Ventas.openPosModal === 'function') Ventas.openPosModal();
-        else if (typeof Ventas.openForm === 'function') Ventas.openForm();
+        if (typeof Ventas !== 'undefined' && typeof Ventas.openPosModal === 'function') Ventas.openPosModal();
+        else if (typeof Ventas !== 'undefined' && typeof Ventas.openForm === 'function') Ventas.openForm();
       }, 50);
     });
 
     document.getElementById('btn-dash-pedido')?.addEventListener('click', () => {
       App.goTo('pedidos');
       setTimeout(() => {
-        if (typeof Pedidos.openPedidoModal === 'function') Pedidos.openPedidoModal();
+        if (typeof Pedidos !== 'undefined' && typeof Pedidos.openPedidoModal === 'function') Pedidos.openPedidoModal();
       }, 50);
     });
 
@@ -289,7 +290,7 @@ const Dashboard = (() => {
     container.querySelectorAll('[data-cambiar-estado]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.cambiarEstado;
-        if (typeof Pedidos.openCambiarEstadoModal === 'function') {
+        if (typeof Pedidos !== 'undefined' && typeof Pedidos.openCambiarEstadoModal === 'function') {
           Pedidos.openCambiarEstadoModal(id);
         } else {
           App.goTo('pedidos');
@@ -361,6 +362,16 @@ const Dashboard = (() => {
         data: { labels: catsGasto, datasets: [{ data: catsGasto.map(c => Analytics.sum(gastosPorCat[c], 'monto')), backgroundColor: ['#B9772E','#8C4B5C','#6B7F5E','#B5754A','#A8434B','#7A6A5D','#3B2A22','#D9A25C'] } ] },
         options: chartOptions(catsGasto.length === 0)
       }));
+    }
+    } catch(err){
+      console.error('Error renderizando Inicio/Dashboard:', err);
+      container.innerHTML = `
+        <div class="empty-state" style="padding:40px 20px;">
+          <h3>Aviso al cargar Inicio</h3>
+          <p class="text-soft">${err.message}</p>
+          <button class="btn btn-primary" onclick="location.reload()">Reintentar</button>
+        </div>
+      `;
     }
   }
 

@@ -23,9 +23,14 @@ const Pedidos = (() => {
   let filtroEstado = 'todos';
   let filtroFecha = 'todas'; // 'todas' | 'hoy' | 'manana' | 'semana'
   let filtroBusqueda = '';
+  let openPedidoModalRef = null;
+  let openCambiarEstadoModalRef = null;
 
   function render(container){
-    const pedidos = Storage.get('pedidos') || [];
+    try {
+      openPedidoModalRef = openPedidoModal;
+      openCambiarEstadoModalRef = openCambiarEstadoModal;
+      const pedidos = Storage.get('pedidos') || [];
     const today = Storage.todayISO();
 
     // Contadores para métricas
@@ -188,7 +193,7 @@ const Pedidos = (() => {
             </thead>
             <tbody>
               ${lista.map(p => {
-                const esHoy = p.fechaEntrega === todayISO;
+                const esHoy = p.fechaEntrega === today;
                 const esPagado = (Number(p.saldoPendiente) <= 0) || p.pagado;
                 const tieneAbono = Number(p.abono) > 0 && !esPagado;
                 const itemsTexto = (p.items || []).map(i => `${i.cantidad}x ${escapeHtml(i.nombre)}`).join(', ');
@@ -721,6 +726,16 @@ const Pedidos = (() => {
 }
       });
     }
+    } catch(err){
+      console.error('Error renderizando Pedidos:', err);
+      container.innerHTML = `
+        <div class="empty-state" style="padding:40px 20px;">
+          <h3>Aviso al cargar Pedidos</h3>
+          <p class="text-soft">${err.message}</p>
+          <button class="btn btn-primary" onclick="location.reload()">Reintentar</button>
+        </div>
+      `;
+    }
   }
 
   function escapeHtml(str){
@@ -933,5 +948,26 @@ Medio: ${p.medioPago || 'Transferencia'}
     overlay.querySelector('#btn-imprimir-hoja-footer').addEventListener('click', triggerPrint);
   }
 
-  return { render, openTicketModal, openHojaTicketsModal, openPedidoModal, openCambiarEstadoModal, generarLinkWhatsApp, escapeHtml };
+  return {
+    render,
+    openTicketModal,
+    openHojaTicketsModal,
+    escapeHtml,
+    openPedidoModal: (id = null) => {
+      if (openPedidoModalRef) {
+        openPedidoModalRef(id);
+      } else {
+        App.goTo('pedidos');
+        setTimeout(() => { if (openPedidoModalRef) openPedidoModalRef(id); }, 120);
+      }
+    },
+    openCambiarEstadoModal: (id) => {
+      if (openCambiarEstadoModalRef) {
+        openCambiarEstadoModalRef(id);
+      } else {
+        App.goTo('pedidos');
+        setTimeout(() => { if (openCambiarEstadoModalRef) openCambiarEstadoModalRef(id); }, 120);
+      }
+    }
+  };
 })();
