@@ -113,8 +113,21 @@ const Config = (() => {
         <p class="form-hint">Por defecto la app no permite registrar una salida de inventario si no hay stock suficiente.</p>
       </div>
 
+      <!-- REINICIO OPERATIVO: LIMPIAR PRUEBAS -->
+      <div class="card" style="border-left: 4px solid var(--accent);">
+        <h3 class="card-title mt-0">🧹 Reinicio Operativo (Comenzar de Cero)</h3>
+        <p class="text-soft">Limpia todos los <strong>pedidos y ventas de prueba</strong> para dejar la pastelería lista para operar en el día a día.</p>
+        <div style="background:var(--surface-2); padding:10px 14px; border-radius:var(--radius-sm); font-size:13px; margin:10px 0;">
+          ✓ <strong>Se eliminan:</strong> Los pedidos de prueba y el historial de ventas.<br/>
+          ✓ <strong>Se conservan:</strong> Tus productos (con sus fotos, precios y recetas), insumos y tus datos bancarios y de WhatsApp.
+        </div>
+        <button class="btn btn-primary" id="btn-limpiar-pruebas" style="background:var(--accent); border-color:var(--accent); font-weight:600;">
+          🧹 Limpiar solo Pedidos y Ventas de prueba
+        </button>
+      </div>
+
       <div class="card">
-        <h3 class="card-title mt-0" style="color:var(--danger);">Zona de riesgo</h3>
+        <h3 class="card-title mt-0" style="color:var(--danger);">Zona de riesgo (Borrado total)</h3>
         <p class="text-soft">Esto eliminará permanentemente productos, ventas, insumos, pedidos y gastos guardados en este navegador.</p>
         <button class="btn btn-danger" id="btn-eliminar-todo">Eliminar todos los datos</button>
       </div>
@@ -180,6 +193,24 @@ const Config = (() => {
       cfg.permitirStockNegativo = e.target.checked;
       Storage.save('configuracion', cfg);
       App.toast('Configuración actualizada');
+    });
+
+    // Limpiar solo pedidos y ventas de prueba
+    document.getElementById('btn-limpiar-pruebas')?.addEventListener('click', () => {
+      App.confirmAction({
+        title: '¿Limpiar pedidos y ventas de prueba?',
+        message: 'Esto vaciará la lista de pedidos y ventas para comenzar a operar en limpio. Tus productos, fotos, recetas y datos de WhatsApp NO se borrarán.',
+        confirmLabel: 'Limpiar para empezar de cero',
+        danger: false,
+        onConfirm: async () => {
+          Storage.limpiarPedidosYVentas();
+          if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.limpiarPedidosYVentasNube === 'function') {
+            await SupabaseBridge.limpiarPedidosYVentasNube();
+          }
+          App.toast('✓ Pedidos y ventas de prueba eliminados. ¡Lista para operar!');
+          App.goTo('dashboard');
+        }
+      });
     });
 
     document.getElementById('btn-eliminar-todo').addEventListener('click', () => {

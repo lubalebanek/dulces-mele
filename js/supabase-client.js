@@ -361,6 +361,18 @@ const SupabaseBridge = (() => {
     }
   }
 
+  async function limpiarPedidosYVentasNube(){
+    if (!client) return;
+    try {
+      await client.from('pedido_items').delete().neq('id', 0);
+      await client.from('pedidos').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await client.from('ventas').delete().neq('id', '0');
+      console.log('✓ Pedidos y ventas de prueba limpiados en Supabase');
+    } catch(e) {
+      console.warn('Aviso limpiando pedidos en Supabase:', e);
+    }
+  }
+
   return {
     init,
     getCurrentUser,
@@ -374,6 +386,7 @@ const SupabaseBridge = (() => {
     eliminarPedidoNube,
     guardarVentasNube,
     eliminarVentasPedidoNube,
+    limpiarPedidosYVentasNube,
     sincronizarPedidos,
     reproducirCampana,
     get isConnected(){ return isConnected; },

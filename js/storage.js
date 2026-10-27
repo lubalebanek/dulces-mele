@@ -269,6 +269,12 @@ const Storage = (() => {
     localStorage.setItem(KEYS.seedApplied, '1'); // no reinsertar demo automáticamente tras un borrado intencional
   }
 
+  function limpiarPedidosYVentas(){
+    save('pedidos', []);
+    save('ventas', []);
+    return true;
+  }
+
   /* ---------------- Métodos para Pedidos y Stock ---------------- */
   function descontarStockProducto(productoId, cantidad){
     const productos = get('productos');
@@ -888,6 +894,7 @@ function crearPedido({
     get, save, generateId, init, exportBackup, importBackup, eraseAll, todayISO,
     crearPedido, actualizarPedido, eliminarPedido,
     marcarPedidoPagado, marcarPedidoPorPagar, registrarPedidoEnVentas, removerPedidoDeVentas,
+    limpiarPedidosYVentas,
     descontarStockProducto, restaurarStockProducto,
     seedPasteleriaSiCorresponde, convertirUnidad, getReceta, saveReceta, eliminarReceta,
     calcularCostoReceta, producirLote
