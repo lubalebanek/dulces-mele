@@ -25,6 +25,7 @@ const Pedidos = (() => {
   let filtroBusqueda = '';
   let openPedidoModalRef = null;
   let openCambiarEstadoModalRef = null;
+  let seleccionadosParaImprimir = new Set();
 
   function render(container){
     try {
@@ -115,7 +116,7 @@ const Pedidos = (() => {
     `;
 
     document.getElementById('btn-nuevo-pedido').addEventListener('click', () => openPedidoModal());
-    document.getElementById('btn-hoja-tickets').addEventListener('click', () => openHojaTicketsModal());
+    document.getElementById('btn-hoja-tickets').addEventListener('click', () => openHojaTicketsModal(Array.from(seleccionadosParaImprimir)));
     document.getElementById('filtro-estado').addEventListener('change', (e) => { filtroEstado = e.target.value; renderLista(); });
     document.getElementById('filtro-fecha').addEventListener('change', (e) => { filtroFecha = e.target.value; renderLista(); });
     document.getElementById('filtro-busqueda').addEventListener('input', (e) => { filtroBusqueda = e.target.value; renderLista(); });
@@ -182,6 +183,9 @@ const Pedidos = (() => {
           <table>
             <thead>
               <tr>
+                <th style="width: 38px; text-align: center;">
+                  <input type="checkbox" id="check-todos-pedidos" title="Seleccionar todos para imprimir tickets" style="cursor:pointer;" />
+                </th>
                 <th>Código / Fecha</th>
                 <th>Cliente y Entrega</th>
                 <th>Productos</th>
@@ -198,9 +202,13 @@ const Pedidos = (() => {
                 const tieneAbono = Number(p.abono) > 0 && !esPagado;
                 const itemsTexto = (p.items || []).map(i => `${i.cantidad}x ${escapeHtml(i.nombre)}`).join(', ');
                 const estadoBadge = getEstadoBadge(p.estado);
+                const estaSeleccionado = seleccionadosParaImprimir.has(p.id);
 
                 return `
                   <tr style="${esHoy ? 'background: #FFFDF9;' : ''}">
+                    <td style="text-align: center; vertical-align: middle;">
+                      <input type="checkbox" class="check-pedido-item" data-id="${p.id}" ${estaSeleccionado ? 'checked' : ''} style="cursor:pointer;" title="Seleccionar para imprimir ticket" />
+                    </td>
                     <td>
                       <div><strong>${escapeHtml(p.codigo || '—')}</strong> ${p.demo ? '<span class="tag-demo">EJEMPLO</span>' : ''}</div>
                       <div class="text-soft" style="font-size:13px; font-weight: 600; color: ${esHoy ? 'var(--amber)' : 'inherit'};">
@@ -299,6 +307,47 @@ const Pedidos = (() => {
           render(container);
         });
       });
+
+      // Manejo de casillas de selección para imprimir tickets
+      const updateBotonTickets = () => {
+        const btn = document.getElementById('btn-hoja-tickets');
+        if (!btn) return;
+        const totalSel = seleccionadosParaImprimir.size;
+        if (totalSel > 0) {
+          btn.innerHTML = `🖨️ Imprimir Seleccionados (${totalSel})`;
+          btn.className = 'btn btn-primary';
+          btn.style.background = 'var(--berry)';
+          btn.style.borderColor = 'var(--berry)';
+        } else {
+          btn.innerHTML = `🖨️ Hoja de Tickets (Personalizada)`;
+          btn.className = 'btn btn-secondary';
+          btn.style.background = '';
+          btn.style.borderColor = '';
+        }
+      };
+
+      const checkAll = listEl.querySelector('#check-todos-pedidos');
+      if (checkAll) {
+        checkAll.addEventListener('change', () => {
+          lista.forEach(p => {
+            if (checkAll.checked) seleccionadosParaImprimir.add(p.id);
+            else seleccionadosParaImprimir.delete(p.id);
+          });
+          listEl.querySelectorAll('.check-pedido-item').forEach(cb => { cb.checked = checkAll.checked; });
+          updateBotonTickets();
+        });
+      }
+
+      listEl.querySelectorAll('.check-pedido-item').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const id = cb.dataset.id;
+          if (cb.checked) seleccionadosParaImprimir.add(id);
+          else seleccionadosParaImprimir.delete(id);
+          updateBotonTickets();
+        });
+      });
+
+      updateBotonTickets();
     }
 
     function getEstadoBadge(estado){
@@ -889,12 +938,19 @@ Medio: ${p.medioPago || 'Transferencia'}
     });
   }
 
-  /* Modal para imprimir Hoja Carta Completa con 9 tickets (3 columnas x 3 filas) */
-  function openHojaTicketsModal(){
+  /* Modal para imprimir Hoja Carta con Selección Personalizada de Tickets */
+  function openHojaTicketsModal(preseleccionadosIds = []){
     const pedidos = Storage.get('pedidos') || [];
     const hoyISO = Storage.todayISO();
 
-    // Priorizar pedidos activos para hoy y pendientes
+    const manana = new Date();
+    manana.setDate(manana.getDate() + 1);
+    const mananaISO = manana.toISOString().slice(0, 10);
+
+    const en7 = new Date();
+    en7.setDate(en7.getDate() + 7);
+    const en7ISO = en7.toISOString().slice(0, 10);
+
     let activos = pedidos.filter(p => p.estado !== 'cancelado');
     activos.sort((a,b) => {
       if (a.fechaEntrega === hoyISO && b.fechaEntrega !== hoyISO) return -1;
@@ -903,47 +959,235 @@ Medio: ${p.medioPago || 'Transferencia'}
     });
 
     if (activos.length === 0){
-      App.toast('No hay pedidos activos para imprimir en la hoja', 'error');
+      App.toast('No hay pedidos activos para imprimir tickets', 'error');
       return;
     }
 
-    // Tomar los primeros 9 (o repetir si hay menos de 9 para aprovechar la hoja)
-    const ticketsPagina = activos.slice(0, 9);
+    // Mapa de selección: id -> copias (1, 2, 3...)
+    const seleccionMap = new Map();
+
+    if (Array.isArray(preseleccionadosIds) && preseleccionadosIds.length > 0){
+      preseleccionadosIds.forEach(id => {
+        if (activos.some(p => p.id === id)) seleccionMap.set(id, 1);
+      });
+    } else {
+      // Por defecto preseleccionar los de hoy y mañana (hasta 9)
+      const porDefecto = activos.filter(p => p.fechaEntrega === hoyISO || p.fechaEntrega === mananaISO);
+      if (porDefecto.length > 0) {
+        porDefecto.slice(0, 9).forEach(p => seleccionMap.set(p.id, 1));
+      } else {
+        activos.slice(0, 9).forEach(p => seleccionMap.set(p.id, 1));
+      }
+    }
 
     const overlay = App.openModal(`
       <div class="modal-header no-print">
-        <h3>Hoja de Tickets (Carta 3x3 — 9 tickets para recortar)</h3>
+        <div>
+          <h3 style="margin:0;">🖨️ Hoja de Tickets (Personalizada)</h3>
+          <div class="text-soft" style="font-size:12px;">Escoge qué pedidos imprimir y cuántas copias necesitas (3×3 por hoja carta)</div>
+        </div>
         <div style="display:flex; gap:8px;">
-          <button class="btn btn-primary btn-sm" id="btn-imprimir-hoja">🖨️ Imprimir Hoja Carta</button>
+          <button class="btn btn-primary btn-sm" id="btn-imprimir-hoja">🖨️ Imprimir Tickets</button>
           <button class="modal-close" data-close>${App.svgIcon('close')}</button>
         </div>
       </div>
 
-      <div style="background: var(--surface-2); padding: 12px; border-radius: var(--radius-sm); margin-bottom: 12px; font-size: 13px;" class="no-print">
-        ✂️ <strong>Aprovecha tu hoja carta:</strong> Organiza hasta 9 tickets en una sola página (3 columnas × 3 filas) con líneas punteadas para recortar con tijera y pegar a las cajas de entrega.
-      </div>
+      <!-- PANEL DE CONTROL Y SELECCIÓN (no-print) -->
+      <div class="no-print" style="background:var(--surface-2); padding:12px 14px; border-radius:var(--radius-sm); margin-bottom:14px; border:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-sel-hoy">🔥 Solo Hoy</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-sel-manana">📅 Solo Mañana</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-sel-hoy-manana">🗓️ Hoy y Mañana</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-sel-semana">Próximos 7 días</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-sel-todos">✓ Todos</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-sel-ninguno">✕ Desmarcar</button>
+          </div>
+          <div id="tickets-contador-badge" style="font-size:13px; font-weight:700; color:var(--berry);">
+            <!-- Se actualiza dinámicamente -->
+          </div>
+        </div>
 
-      <!-- Area imprimible en grilla 3x3 -->
-      <div id="ticket-print-area">
-        <div class="tickets-sheet-grid">
-          ${ticketsPagina.map(p => generarTicketHTML(p, { isSingle: false })).join('')}
+        <div style="font-size:11px; text-transform:uppercase; font-weight:700; color:var(--ink-soft); margin-bottom:6px;">
+          Selecciona los pedidos para esta impresión:
+        </div>
+
+        <!-- LISTA CON CHECKBOXES -->
+        <div id="tickets-check-list" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:6px; max-height:160px; overflow-y:auto; padding:4px;">
+          <!-- Items generados dinámicamente -->
         </div>
       </div>
 
-      <div class="modal-footer no-print">
+      <div class="no-print" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:12px; color:var(--ink-soft);">
+        <span>✂️ <strong>Vista previa de hoja carta:</strong> Organizados con líneas punteadas para recortar y pegar en las cajas.</span>
+      </div>
+
+      <!-- AREA IMPRIMIBLE -->
+      <div id="ticket-print-area">
+        <!-- Grilla generada dinámicamente -->
+      </div>
+
+      <div class="modal-footer no-print" style="margin-top:16px;">
         <button class="btn btn-secondary" data-close>Cerrar</button>
-        <button class="btn btn-primary" id="btn-imprimir-hoja-footer">🖨️ Imprimir Hoja Carta</button>
+        <button class="btn btn-primary" id="btn-imprimir-hoja-footer">🖨️ Imprimir Tickets</button>
       </div>
     `, { large: true });
 
     overlay.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', App.closeModal));
 
+    const containerPrint = overlay.querySelector('#ticket-print-area');
+    const badgeContador = overlay.querySelector('#tickets-contador-badge');
+    const listCheckWrap = overlay.querySelector('#tickets-check-list');
+
+    function actualizarVistaTickets(){
+      // 1. Renderizar checklist
+      listCheckWrap.innerHTML = activos.map(p => {
+        const checked = seleccionMap.has(p.id);
+        const copias = seleccionMap.get(p.id) || 1;
+        const esHoy = p.fechaEntrega === hoyISO;
+        const esManana = p.fechaEntrega === mananaISO;
+        const tagDia = esHoy ? '<span class="badge badge-berry" style="font-size:10px; padding:1px 4px;">HOY</span>' : (esManana ? '<span class="badge badge-amber" style="font-size:10px; padding:1px 4px;">MAÑANA</span>' : '');
+
+        return `
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; padding:6px 8px; background:${checked ? 'var(--berry-soft)' : 'var(--surface)'}; border:1px solid ${checked ? 'var(--berry)' : 'var(--line)'}; border-radius:var(--radius-sm); font-size:12px;">
+            <label style="display:flex; align-items:center; gap:6px; margin:0; cursor:pointer; flex:1; overflow:hidden;">
+              <input type="checkbox" data-check-pedido="${p.id}" ${checked ? 'checked' : ''} style="cursor:pointer;" />
+              <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                <strong>#${escapeHtml(p.codigo || '')}</strong> ${tagDia}
+                <span>${escapeHtml(p.clienteNombre)}</span>
+                <span class="text-soft" style="font-size:11px;">(${App.formatDate(p.fechaEntrega)})</span>
+              </div>
+            </label>
+            ${checked ? `
+              <div style="display:flex; align-items:center; gap:2px;">
+                <button type="button" class="btn btn-ghost btn-sm" data-mod-copia="${p.id}" data-delta="-1" style="padding:0 5px; font-size:11px;" title="Menos copias">-</button>
+                <span style="font-weight:700; font-size:11px;">${copias}x</span>
+                <button type="button" class="btn btn-ghost btn-sm" data-mod-copia="${p.id}" data-delta="1" style="padding:0 5px; font-size:11px;" title="Más copias">+</button>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      // Event listeners del checklist
+      listCheckWrap.querySelectorAll('[data-check-pedido]').forEach(chk => {
+        chk.addEventListener('change', () => {
+          const id = chk.dataset.checkPedido;
+          if (chk.checked) seleccionMap.set(id, 1);
+          else seleccionMap.delete(id);
+          actualizarVistaTickets();
+        });
+      });
+
+      listCheckWrap.querySelectorAll('[data-mod-copia]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = btn.dataset.modCopia;
+          const delta = Number(btn.dataset.delta);
+          const act = seleccionMap.get(id) || 1;
+          const nuevo = Math.max(1, act + delta);
+          seleccionMap.set(id, nuevo);
+          actualizarVistaTickets();
+        });
+      });
+
+      // 2. Construir lista plana de tickets a imprimir
+      const ticketsAImprimir = [];
+      activos.forEach(p => {
+        if (seleccionMap.has(p.id)){
+          const copias = seleccionMap.get(p.id) || 1;
+          for (let i = 0; i < copias; i++){
+            ticketsAImprimir.push(p);
+          }
+        }
+      });
+
+      // 3. Actualizar contador
+      const totalTickets = ticketsAImprimir.length;
+      const numHojas = Math.max(1, Math.ceil(totalTickets / 9));
+      badgeContador.innerHTML = totalTickets === 0 
+        ? `<span style="color:var(--danger);">⚠️ Ningún ticket seleccionado</span>`
+        : `<span>📌 ${totalTickets} ticket(s) seleccionados • ${numHojas} hoja(s) carta</span>`;
+
+      // 4. Renderizar preview por hojas de 9
+      if (totalTickets === 0){
+        containerPrint.innerHTML = `
+          <div class="empty-state no-print" style="padding:30px 10px; background:var(--surface-2); border-radius:var(--radius-sm);">
+            <h4>No has seleccionado ningún ticket</h4>
+            <p class="text-soft">Marca los pedidos que deseas imprimir usando las casillas de arriba.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const chunks = [];
+      for (let i = 0; i < ticketsAImprimir.length; i += 9){
+        chunks.push(ticketsAImprimir.slice(i, i + 9));
+      }
+
+      containerPrint.innerHTML = chunks.map((chunk, sheetIdx) => `
+        <div style="margin-bottom: ${sheetIdx < chunks.length - 1 ? '24px' : '0'};">
+          ${chunks.length > 1 ? `
+            <div class="no-print" style="font-size:12px; font-weight:700; color:var(--ink-soft); margin-bottom:6px;">
+              📄 Hoja ${sheetIdx + 1} de ${chunks.length} (${chunk.length} tickets):
+            </div>
+          ` : ''}
+          <div class="tickets-sheet-grid">
+            ${chunk.map(p => generarTicketHTML(p, { isSingle: false })).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Botones rápidos de selección
+    overlay.querySelector('#btn-sel-hoy').addEventListener('click', () => {
+      seleccionMap.clear();
+      activos.filter(p => p.fechaEntrega === hoyISO).forEach(p => seleccionMap.set(p.id, 1));
+      actualizarVistaTickets();
+    });
+
+    overlay.querySelector('#btn-sel-manana').addEventListener('click', () => {
+      seleccionMap.clear();
+      activos.filter(p => p.fechaEntrega === mananaISO).forEach(p => seleccionMap.set(p.id, 1));
+      actualizarVistaTickets();
+    });
+
+    overlay.querySelector('#btn-sel-hoy-manana').addEventListener('click', () => {
+      seleccionMap.clear();
+      activos.filter(p => p.fechaEntrega === hoyISO || p.fechaEntrega === mananaISO).forEach(p => seleccionMap.set(p.id, 1));
+      actualizarVistaTickets();
+    });
+
+    overlay.querySelector('#btn-sel-semana').addEventListener('click', () => {
+      seleccionMap.clear();
+      activos.filter(p => p.fechaEntrega >= hoyISO && p.fechaEntrega <= en7ISO).forEach(p => seleccionMap.set(p.id, 1));
+      actualizarVistaTickets();
+    });
+
+    overlay.querySelector('#btn-sel-todos').addEventListener('click', () => {
+      seleccionMap.clear();
+      activos.forEach(p => seleccionMap.set(p.id, 1));
+      actualizarVistaTickets();
+    });
+
+    overlay.querySelector('#btn-sel-ninguno').addEventListener('click', () => {
+      seleccionMap.clear();
+      actualizarVistaTickets();
+    });
+
+    actualizarVistaTickets();
+
     const triggerPrint = () => {
+      if (seleccionMap.size === 0){
+        App.toast('Selecciona al menos un pedido para imprimir.', 'error');
+        return;
+      }
       const modal = overlay.querySelector('.modal');
       if (modal) modal.scrollTop = 0;
       window.scrollTo(0, 0);
       window.print();
     };
+
     overlay.querySelector('#btn-imprimir-hoja').addEventListener('click', triggerPrint);
     overlay.querySelector('#btn-imprimir-hoja-footer').addEventListener('click', triggerPrint);
   }
