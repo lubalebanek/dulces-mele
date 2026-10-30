@@ -490,13 +490,20 @@ function crearPedido({
   }
 
   function eliminarPedido(id){
-    removerPedidoDeVentas(id);
     const pedidos = get('pedidos');
+    const p = pedidos.find(item => item.id === id);
+    const codigo = p ? p.codigo : null;
+
+    removerPedidoDeVentas(id);
     const filtrados = pedidos.filter(p => p.id !== id);
     save('pedidos', filtrados);
 
-    if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.eliminarPedidoNube === 'function') {
-      SupabaseBridge.eliminarPedidoNube(id);
+    if (typeof SupabaseBridge !== 'undefined') {
+      if (typeof SupabaseBridge.eliminarPedidoNube === 'function') {
+        SupabaseBridge.eliminarPedidoNube(id, codigo);
+      } else if (typeof SupabaseBridge.eliminarPedido === 'function') {
+        SupabaseBridge.eliminarPedido(id, codigo);
+      }
     }
   }
 

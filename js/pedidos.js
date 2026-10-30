@@ -747,7 +747,10 @@ const Pedidos = (() => {
           Storage.actualizarPedido(editing.id, datos);
           App.toast('Pedido modificado con éxito');
         } else {
-          Storage.crearPedido({ ...datos, origen: 'manual' });
+          const nuevo = Storage.crearPedido({ ...datos, origen: 'manual' });
+          if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.enviarPedido === 'function') {
+            SupabaseBridge.enviarPedido(nuevo);
+          }
           App.toast('¡Pedido creado con éxito! Se descontó el stock de productos terminados.');
         }
 
@@ -762,17 +765,23 @@ const Pedidos = (() => {
         message: 'Esta acción no se puede deshacer. Si el pedido tenía stock descontado, puedes cambiar su estado a "Cancelado" para restaurar el stock.',
         confirmLabel: 'Eliminar pedido',
         danger: true,
-       onConfirm: async () => {
-  try {
-    await SupabaseBridge.eliminarPedido(id);
-    Storage.eliminarPedido(id);
-    App.toast('Pedido eliminado');
-    render(container);
-  } catch (error) {
-    console.error('Error eliminando pedido:', error);
-    App.toast('No se pudo eliminar el pedido: ' + error.message, 'error');
-  }
-}
+        onConfirm: async () => {
+          try {
+            Storage.eliminarPedido(id);
+            if (typeof SupabaseBridge !== 'undefined') {
+              if (typeof SupabaseBridge.eliminarPedido === 'function') {
+                await SupabaseBridge.eliminarPedido(id);
+              } else if (typeof SupabaseBridge.eliminarPedidoNube === 'function') {
+                await SupabaseBridge.eliminarPedidoNube(id);
+              }
+            }
+            App.toast('Pedido eliminado con éxito');
+            render(container);
+          } catch (error) {
+            console.error('Error eliminando pedido:', error);
+            App.toast('No se pudo eliminar el pedido: ' + (error.message || error), 'error');
+          }
+        }
       });
     }
     } catch(err){

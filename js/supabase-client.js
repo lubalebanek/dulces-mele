@@ -75,21 +75,21 @@ const SupabaseBridge = (() => {
       console.log("📦 Pedidos encontrados en la nube:", pedidosNube?.length || 0);
       
       const pedidosLocal = Storage.get('pedidos') || [];
-      let hayNuevos = false;
+      let huboCambios = false;
 
       (pedidosNube || []).forEach(pNube => {
-        // Evitar duplicados por id o por código correlativo
-        const yaExiste = pedidosLocal.find(p => p.id === pNube.id || (p.codigo && pNube.codigo && p.codigo === pNube.codigo));
-        if (!yaExiste) {
-          const itemsDelPedido = (itemsNube || []).filter(i => i.pedido_id === pNube.id).map(i => ({
-            productoId: i.producto_id,
-            nombre: i.nombre || 'Producto sin nombre',
-            precioUnitario: Number(i.precio_unitario) || 0,
-            cantidad: Number(i.cantidad) || 1,
-            subtotal: Number(i.subtotal) || 0,
-            tipoStock: i.tipo_stock || 'terminado'
-          }));
+        const itemsDelPedido = (itemsNube || []).filter(i => i.pedido_id === pNube.id).map(i => ({
+          productoId: i.producto_id,
+          nombre: i.nombre || 'Producto sin nombre',
+          precioUnitario: Number(i.precio_unitario) || 0,
+          cantidad: Number(i.cantidad) || 1,
+          subtotal: Number(i.subtotal) || 0,
+          tipoStock: i.tipo_stock || 'terminado'
+        }));
 
+        const idx = pedidosLocal.findIndex(p => p.id === pNube.id || (p.codigo && pNube.codigo && p.codigo === pNube.codigo));
+
+        if (idx === -1) {
           pedidosLocal.push({
             id: pNube.id,
             codigo: pNube.codigo || 'Sin Código',
@@ -110,12 +110,45 @@ const SupabaseBridge = (() => {
             items: itemsDelPedido,
             creadoEn: pNube.created_at ? new Date(pNube.created_at).getTime() : Date.now()
           });
-          hayNuevos = true;
+          huboCambios = true;
+        } else {
+          // Ya existe en local: sincronizar los datos de la nube
+          const p = pedidosLocal[idx];
+          if (
+            p.estado !== pNube.estado ||
+            Number(p.abono) !== Number(pNube.abono) ||
+            Number(p.saldoPendiente) !== Number(pNube.saldo_pendiente) ||
+            p.clienteNombre !== pNube.cliente_nombre ||
+            p.fechaEntrega !== pNube.fecha_entrega ||
+            p.horaEntrega !== (pNube.hora_entrega || '') ||
+            p.medioPago !== pNube.medio_pago ||
+            Number(p.total) !== Number(pNube.total) ||
+            p.tipoEntrega !== pNube.tipo_entrega ||
+            p.direccionDespacho !== (pNube.direccion_despacho || '') ||
+            p.notas !== (pNube.notas || '')
+          ) {
+            p.id = pNube.id; // asegurar UUID de la nube
+            p.estado = pNube.estado;
+            p.abono = Number(pNube.abono) || 0;
+            p.saldoPendiente = Number(pNube.saldo_pendiente) || 0;
+            p.clienteNombre = pNube.cliente_nombre || p.clienteNombre;
+            p.clienteTelefono = pNube.cliente_telefono || p.clienteTelefono;
+            p.clienteEmail = pNube.cliente_email || p.clienteEmail;
+            p.tipoEntrega = pNube.tipo_entrega || p.tipoEntrega;
+            p.direccionDespacho = pNube.direccion_despacho || p.direccionDespacho;
+            p.fechaEntrega = pNube.fecha_entrega || p.fechaEntrega;
+            p.horaEntrega = pNube.hora_entrega || p.horaEntrega;
+            p.notas = pNube.notas || p.notas;
+            p.total = Number(pNube.total) || p.total;
+            p.medioPago = pNube.medio_pago || p.medioPago;
+            if (itemsDelPedido.length > 0) p.items = itemsDelPedido;
+            huboCambios = true;
+          }
         }
       });
 
-      if (hayNuevos) {
-        console.log("✅ Se encontraron pedidos nuevos. Guardando en memoria local...");
+      if (huboCambios) {
+        console.log("✅ Sincronización completada. Actualizando almacenamiento local...");
         Storage.save('pedidos', pedidosLocal);
         
         // Refrescar vista actual
@@ -304,28 +337,106 @@ const SupabaseBridge = (() => {
   }
 
   async function actualizarPedidoNube(pedido){
-    if (!client || !pedido || !pedido.id) return;
+    if (!client || !pedido) return false;
     try {
       const payload = {
+        cliente_nombre: pedido.clienteNombre || 'Cliente',
+        cliente_telefono: pedido.clienteTelefono || '',
+        cliente_email: pedido.clienteEmail || '',
+        tipo_entrega: pedido.tipoEntrega || 'retiro',
+        direccion_despacho: pedido.direccionDespacho || '',
+        fecha_entrega: pedido.fechaEntrega,
+        hora_entrega: pedido.horaEntrega || '',
+        notas: pedido.notas || '',
+        total: Number(pedido.total) || 0,
         abono: Number(pedido.abono) || 0,
         saldo_pendiente: Number(pedido.saldoPendiente) || 0,
         estado: pedido.estado || 'pendiente',
         medio_pago: pedido.medioPago || 'Transferencia'
       };
-      await client.from('pedidos').update(payload).eq('id', pedido.id);
-      console.log('✓ Pedido actualizado en Supabase:', pedido.codigo);
+
+      const esUUID = pedido.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pedido.id);
+      
+      let query;
+      if (esUUID) {
+        query = client.from('pedidos').update(payload).eq('id', pedido.id);
+      } else if (pedido.codigo) {
+        query = client.from('pedidos').update(payload).eq('codigo', pedido.codigo);
+      } else {
+        return false;
+      }
+
+      const { error } = await query;
+      if (error) {
+        console.error('Error actualizando pedido en Supabase:', error);
+        return false;
+      }
+
+      // Si se actualizaron items y el id es UUID válido, refrescar pedido_items
+      if (esUUID && Array.isArray(pedido.items) && pedido.items.length > 0) {
+        try {
+          await client.from('pedido_items').delete().eq('pedido_id', pedido.id);
+          const itemsPayload = pedido.items.map(item => {
+            const esItemUUID = item.productoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.productoId);
+            return {
+              pedido_id: pedido.id,
+              producto_id: esItemUUID ? item.productoId : null,
+              nombre: item.nombre,
+              precio_unitario: Number(item.precioUnitario) || 0,
+              cantidad: Number(item.cantidad) || 1,
+              subtotal: Number(item.subtotal) || 0,
+              tipo_stock: item.tipoStock || 'terminado'
+            };
+          });
+          await client.from('pedido_items').insert(itemsPayload);
+        } catch(errItems) {
+          console.warn('Aviso actualizando items en Supabase:', errItems);
+        }
+      }
+
+      console.log('✓ Pedido actualizado en Supabase:', pedido.codigo || pedido.id);
+      return true;
     } catch(e) {
       console.warn('Aviso: error actualizando pedido en Supabase:', e);
+      return false;
     }
   }
 
-  async function eliminarPedidoNube(pedidoId){
-    if (!client || !pedidoId) return;
+  async function eliminarPedidoNube(pedidoId, codigo = null){
+    if (!client || (!pedidoId && !codigo)) return false;
     try {
-      await client.from('pedidos').delete().eq('id', pedidoId);
-      console.log('✓ Pedido eliminado de Supabase:', pedidoId);
+      const esUUID = pedidoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pedidoId);
+      
+      // 1. Eliminar ventas asociadas en Supabase
+      if (esUUID) {
+        await client.from('ventas').delete().eq('pedido_id', pedidoId);
+      }
+
+      // 2. Eliminar items del pedido en Supabase
+      if (esUUID) {
+        await client.from('pedido_items').delete().eq('pedido_id', pedidoId);
+      }
+
+      // 3. Eliminar pedido
+      let query;
+      if (esUUID) {
+        query = client.from('pedidos').delete().eq('id', pedidoId);
+      } else if (codigo) {
+        query = client.from('pedidos').delete().eq('codigo', codigo);
+      } else {
+        query = client.from('pedidos').delete().eq('id', pedidoId);
+      }
+
+      const { error } = await query;
+      if (error) {
+        console.error('Error eliminando pedido en Supabase:', error);
+        return false;
+      }
+      console.log('✓ Pedido eliminado de Supabase:', pedidoId || codigo);
+      return true;
     } catch(e) {
       console.warn('Aviso: error eliminando pedido en Supabase:', e);
+      return false;
     }
   }
 
@@ -364,9 +475,9 @@ const SupabaseBridge = (() => {
   async function limpiarPedidosYVentasNube(){
     if (!client) return;
     try {
-      await client.from('pedido_items').delete().neq('id', 0);
+      await client.from('pedido_items').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await client.from('pedidos').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await client.from('ventas').delete().neq('id', '0');
+      await client.from('ventas').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       console.log('✓ Pedidos y ventas de prueba limpiados en Supabase');
     } catch(e) {
       console.warn('Aviso limpiando pedidos en Supabase:', e);
@@ -383,7 +494,9 @@ const SupabaseBridge = (() => {
     guardarProducto,
     enviarPedido,
     actualizarPedidoNube,
+    actualizarPedido: actualizarPedidoNube,
     eliminarPedidoNube,
+    eliminarPedido: eliminarPedidoNube,
     guardarVentasNube,
     eliminarVentasPedidoNube,
     limpiarPedidosYVentasNube,
