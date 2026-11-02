@@ -19,6 +19,7 @@ const Inventario = (() => {
           <div class="subtitle">Materias primas, insumos y materiales</div>
         </div>
         <div class="header-actions">
+          <button class="btn btn-secondary" id="btn-vaciar-inventario" style="color: var(--danger); border-color: var(--line);" title="Eliminar todos los insumos de ejemplo">🗑️ Vaciar todo</button>
           <button class="btn btn-secondary" id="btn-salida">Salida de inventario</button>
           <button class="btn btn-secondary" id="btn-entrada">Entrada de inventario</button>
           <button class="btn btn-primary" id="btn-nuevo-insumo">${App.svgIcon('plus')} Nuevo insumo</button>
@@ -36,6 +37,24 @@ const Inventario = (() => {
     document.getElementById('btn-nuevo-insumo').addEventListener('click', () => openInsumoForm());
     document.getElementById('btn-entrada').addEventListener('click', () => openMovimientoForm('entrada'));
     document.getElementById('btn-salida').addEventListener('click', () => openMovimientoForm('salida'));
+    document.getElementById('btn-vaciar-inventario')?.addEventListener('click', () => {
+      const insumos = Storage.get('insumos');
+      if (insumos.length === 0){
+        App.toast('El inventario ya está vacío.');
+        return;
+      }
+      App.confirmAction({
+        title: '¿Vaciar todo el inventario?',
+        message: `Se eliminarán los ${insumos.length} insumos de ejemplo para que puedas registrar tus materias primas e ingredientes reales desde cero.`,
+        confirmLabel: 'Vaciar inventario',
+        danger: true,
+        onConfirm: () => {
+          Storage.vaciarInventario();
+          App.toast('✓ Inventario vaciado. Listo para cargar tus materias primas.');
+          render(container);
+        }
+      });
+    });
     document.getElementById('tab-insumos').addEventListener('click', () => { vista = 'insumos'; render(container); });
     document.getElementById('tab-historial').addEventListener('click', () => { vista = 'historial'; render(container); });
 
@@ -45,7 +64,24 @@ const Inventario = (() => {
       const insumos = Storage.get('insumos').sort((a,b) => a.nombre.localeCompare(b.nombre));
       const content = document.getElementById('inventario-content');
       if (insumos.length === 0){
-        content.innerHTML = `<div class="card"><div class="empty-state"><h3>Aún no hay insumos</h3><p>Agrega tu primer insumo para controlar el stock.</p></div></div>`;
+        content.innerHTML = `
+          <div class="card">
+            <div class="empty-state" style="padding: 40px 20px;">
+              <h3>Aún no hay insumos</h3>
+              <p class="text-soft">El inventario está limpio. Ya puedes cargar tus materias primas e ingredientes reales.</p>
+              <div style="display:flex; gap:10px; justify-content:center; margin-top:16px; flex-wrap:wrap;">
+                <button class="btn btn-primary" id="btn-empty-nuevo">${App.svgIcon('plus')} Agregar mi primer insumo</button>
+                <button class="btn btn-secondary" id="btn-empty-sugeridos">Cargar catálogo de ejemplo</button>
+              </div>
+            </div>
+          </div>
+        `;
+        content.querySelector('#btn-empty-nuevo')?.addEventListener('click', () => openInsumoForm());
+        content.querySelector('#btn-empty-sugeridos')?.addEventListener('click', () => {
+          Storage.seedPasteleriaSiCorresponde(true);
+          App.toast('Catálogo sugerido cargado');
+          render(container);
+        });
         return;
       }
       content.innerHTML = `
@@ -203,10 +239,12 @@ const Inventario = (() => {
     function handleDeleteInsumo(id){
       const insumos = Storage.get('insumos');
       const insumo = insumos.find(i => i.id === id);
+      if (!insumo) return;
       App.confirmAction({
         title: 'Eliminar insumo',
         message: `¿Eliminar "${insumo.nombre}"? El historial de movimientos asociado se conservará.`,
         onConfirm: () => {
+          localStorage.setItem('gp_pasteleriaSeedApplied', '1');
           Storage.save('insumos', insumos.filter(i => i.id !== id));
           App.toast('Insumo eliminado');
           render(container);

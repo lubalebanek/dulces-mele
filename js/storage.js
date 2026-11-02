@@ -214,7 +214,13 @@ const Storage = (() => {
       save('configuracion', cfg);
     }
     applySeedIfNeeded();
-    seedPasteleriaSiCorresponde();
+    if (!localStorage.getItem('gp_pasteleriaSeedApplied')){
+      const ins = get('insumos');
+      if (ins.length === 0){
+        seedPasteleriaSiCorresponde(true);
+      }
+      localStorage.setItem('gp_pasteleriaSeedApplied', '1');
+    }
   }
 
   function exportBackup(){
@@ -275,11 +281,19 @@ const Storage = (() => {
     save('pedidos', []);
     save('recetas', []);
     localStorage.setItem(KEYS.seedApplied, '1'); // no reinsertar demo automáticamente tras un borrado intencional
+    localStorage.setItem('gp_pasteleriaSeedApplied', '1');
   }
 
   function limpiarPedidosYVentas(){
     save('pedidos', []);
     save('ventas', []);
+    return true;
+  }
+
+  function vaciarInventario(){
+    save('insumos', []);
+    save('movimientosInventario', []);
+    localStorage.setItem('gp_pasteleriaSeedApplied', '1');
     return true;
   }
 
@@ -518,6 +532,9 @@ function crearPedido({
   /* ---------------- Escandallo, Recetas y Costeo ---------------- */
   function seedPasteleriaSiCorresponde(forzar = false){
     try {
+      if (!forzar && localStorage.getItem('gp_pasteleriaSeedApplied')) return;
+      localStorage.setItem('gp_pasteleriaSeedApplied', '1');
+
       let insumos = get('insumos');
       let recetas = get('recetas');
       const productos = get('productos');
@@ -544,7 +561,7 @@ function crearPedido({
       ];
 
       let insumosActualizados = false;
-      if (forzar || insumos.length <= 1){
+      if (forzar){
         catalogoInsumos.forEach(item => {
           const existe = insumos.find(i => i.nombre.toLowerCase().trim() === item.nombre.toLowerCase().trim());
           if (!existe){
@@ -569,7 +586,7 @@ function crearPedido({
         }
       }
 
-      if (forzar || recetas.length === 0){
+      if (forzar && recetas.length === 0){
         const mapInsumo = (nombreParcial) => {
           const found = insumos.find(i => i.nombre.toLowerCase().includes(nombreParcial.toLowerCase()));
           return found ? found.id : null;
@@ -909,7 +926,7 @@ function crearPedido({
     get, save, generateId, init, exportBackup, importBackup, eraseAll, todayISO,
     crearPedido, actualizarPedido, eliminarPedido,
     marcarPedidoPagado, marcarPedidoPorPagar, registrarPedidoEnVentas, removerPedidoDeVentas,
-    limpiarPedidosYVentas,
+    limpiarPedidosYVentas, vaciarInventario,
     descontarStockProducto, restaurarStockProducto,
     seedPasteleriaSiCorresponde, convertirUnidad, getReceta, saveReceta, eliminarReceta,
     calcularCostoReceta, producirLote
