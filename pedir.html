@@ -268,14 +268,15 @@
 
 <!-- Scripts de almacenamiento y nube -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/storage.js?v=13"></script>
-<script src="js/supabase-client.js?v=13"></script>
+<script src="js/storage.js?v=14"></script>
+<script src="js/supabase-client.js?v=14"></script>
 
 <script>
   /* Lógica de la Tienda Pública */
   const Cart = (() => {
     let items = {}; // { [productoId]: { producto, cantidad } }
     let categoriaActiva = 'Todas';
+    let isSubmitting = false;
 
     async function init(){
       Storage.init();
@@ -613,6 +614,9 @@ function renderCheckoutModalContent(){
     }
 
     async function enviarPedido(){
+      if (isSubmitting) return;
+      isSubmitting = true;
+
       const submitBtn = document.querySelector('#form-cliente-pedido button[type="submit"]');
       if (submitBtn) {
         submitBtn.disabled = true;
@@ -630,6 +634,7 @@ function renderCheckoutModalContent(){
 
       if (!nombre || !telefono || !fecha){
         alert('Por favor completa todos los campos requeridos (*).');
+        isSubmitting = false;
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.innerHTML = 'Confirmar y Enviar por WhatsApp 💬';
