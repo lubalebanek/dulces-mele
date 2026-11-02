@@ -168,6 +168,7 @@ const Pedidos = (() => {
       }
 
       const listEl = document.getElementById('pedidos-lista');
+      const ventasRegistradas = Storage.get('ventas') || [];
       if (lista.length === 0){
         listEl.innerHTML = `
           <div class="empty-state" style="padding: 40px 20px;">
@@ -200,6 +201,7 @@ const Pedidos = (() => {
                 const esHoy = p.fechaEntrega === today;
                 const esPagado = (Number(p.saldoPendiente) <= 0) || p.pagado;
                 const tieneAbono = Number(p.abono) > 0 && !esPagado;
+                const estaEnVentas = p.registradoEnVentas || ventasRegistradas.some(v => v.pedidoId === p.id || (v.pedidoCodigo && p.codigo && v.pedidoCodigo === p.codigo));
                 const itemsTexto = (p.items || []).map(i => `${i.cantidad}x ${escapeHtml(i.nombre)}`).join(', ');
                 const estadoBadge = getEstadoBadge(p.estado);
                 const estaSeleccionado = seleccionadosParaImprimir.has(p.id);
@@ -241,7 +243,7 @@ const Pedidos = (() => {
                         <div>
                           <span class="badge badge-sage" style="font-weight: 700; font-size: 12px;">🟢 Pagado</span>
                           <div style="font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
-                            <span class="badge badge-neutral" style="font-size: 10px;">${p.registradoEnVentas ? '✓ En Ventas' : 'Sin venta'}</span>
+                            <span class="badge badge-neutral" style="font-size: 10px;">${estaEnVentas ? '✓ En Ventas' : 'Sin venta'}</span>
                             <button class="btn btn-ghost btn-sm" data-pago-toggle="${p.id}" data-action="por_pagar" style="font-size: 10px; padding: 2px 6px;" title="Marcar como por pagar">↩ Por pagar</button>
                           </div>
                         </div>
@@ -468,17 +470,33 @@ const Pedidos = (() => {
         const registrarVenta = checkVenta.checked;
 
         if (modoPago === 'pagado') {
-          Storage.marcarPedidoPagado(p.id, nuevoMedio);
-          Storage.actualizarPedido(p.id, { estado: nuevoEstado, registrarComoVenta: registrarVenta });
+          Storage.actualizarPedido(p.id, {
+            estado: nuevoEstado,
+            abono: Number(p.total) || 0,
+            saldoPendiente: 0,
+            pagado: true,
+            medioPago: nuevoMedio,
+            registrarComoVenta: registrarVenta
+          });
         } else if (modoPago === 'por_pagar') {
-          Storage.marcarPedidoPorPagar(p.id);
-          Storage.actualizarPedido(p.id, { estado: nuevoEstado, medioPago: nuevoMedio });
+          Storage.removerPedidoDeVentas(p.id);
+          Storage.actualizarPedido(p.id, {
+            estado: nuevoEstado,
+            abono: 0,
+            saldoPendiente: Number(p.total) || 0,
+            pagado: false,
+            registradoEnVentas: false,
+            medioPago: nuevoMedio
+          });
         } else {
           // Abono parcial
           const montoAbono = Number(inputAbono.value) || 0;
+          const totalNum = Number(p.total) || 0;
           Storage.actualizarPedido(p.id, {
             estado: nuevoEstado,
             abono: montoAbono,
+            saldoPendiente: Math.max(0, totalNum - montoAbono),
+            pagado: totalNum <= montoAbono,
             medioPago: nuevoMedio,
             registrarComoVenta: registrarVenta
           });
@@ -745,6 +763,9 @@ const Pedidos = (() => {
 
         if (editing){
           Storage.actualizarPedido(editing.id, datos);
+          if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.repararItemsDuplicadosEnNube === 'function') {
+            SupabaseBridge.repararItemsDuplicadosEnNube(editing.id, currentItems);
+          }
           App.toast('Pedido modificado con éxito');
         } else {
           const nuevo = Storage.crearPedido({ ...datos, origen: 'manual' });

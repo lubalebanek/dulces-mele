@@ -7,6 +7,18 @@ const SupabaseBridge = (() => {
   let client = null;
   let isConnected = false;
 
+  function generarUUIDSeguro(){
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      try {
+        return crypto.randomUUID();
+      } catch(e){}
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
   function init(){
     if (typeof Storage !== 'undefined' && typeof Storage.init === 'function') {
       Storage.init();
@@ -78,14 +90,33 @@ const SupabaseBridge = (() => {
       let huboCambios = false;
 
       (pedidosNube || []).forEach(pNube => {
-        const itemsDelPedido = (itemsNube || []).filter(i => i.pedido_id === pNube.id).map(i => ({
-          productoId: i.producto_id,
-          nombre: i.nombre || 'Producto sin nombre',
-          precioUnitario: Number(i.precio_unitario) || 0,
-          cantidad: Number(i.cantidad) || 1,
-          subtotal: Number(i.subtotal) || 0,
-          tipoStock: i.tipo_stock || 'terminado'
-        }));
+        const rawItems = (itemsNube || []).filter(i => i.pedido_id === pNube.id);
+        const seenItemKeys = new Set();
+        const itemsDelPedido = [];
+        let huboDuplicados = false;
+
+        rawItems.forEach(i => {
+          // Filtrar filas duplicadas si fueron insertadas múltiples veces
+          const itemKey = (i.producto_id || '') + '__' + (i.nombre || '').trim() + '__' + Number(i.precio_unitario);
+          if (!seenItemKeys.has(itemKey)) {
+            seenItemKeys.add(itemKey);
+            itemsDelPedido.push({
+              productoId: i.producto_id,
+              nombre: i.nombre || 'Producto sin nombre',
+              precioUnitario: Number(i.precio_unitario) || 0,
+              cantidad: Number(i.cantidad) || 1,
+              subtotal: Number(i.subtotal) || 0,
+              tipoStock: i.tipo_stock || 'terminado'
+            });
+          } else {
+            huboDuplicados = true;
+          }
+        });
+
+        // Si se encontraron items duplicados en la base de datos, auto-reparar en segundo plano
+        if (huboDuplicados && itemsDelPedido.length > 0) {
+          repararItemsDuplicadosEnNube(pNube.id, itemsDelPedido);
+        }
 
         const idx = pedidosLocal.findIndex(p => p.id === pNube.id || (p.codigo && pNube.codigo && p.codigo === pNube.codigo));
 
@@ -114,6 +145,7 @@ const SupabaseBridge = (() => {
         } else {
           // Ya existe en local: sincronizar los datos de la nube
           const p = pedidosLocal[idx];
+          const itemsCambiaron = Array.isArray(p.items) && p.items.length !== itemsDelPedido.length;
           if (
             p.estado !== pNube.estado ||
             Number(p.abono) !== Number(pNube.abono) ||
@@ -125,7 +157,8 @@ const SupabaseBridge = (() => {
             Number(p.total) !== Number(pNube.total) ||
             p.tipoEntrega !== pNube.tipo_entrega ||
             p.direccionDespacho !== (pNube.direccion_despacho || '') ||
-            p.notas !== (pNube.notas || '')
+            p.notas !== (pNube.notas || '') ||
+            itemsCambiaron
           ) {
             p.id = pNube.id; // asegurar UUID de la nube
             p.estado = pNube.estado;
@@ -237,7 +270,7 @@ const SupabaseBridge = (() => {
     try {
       // 1. Asegurar un UUID válido para el pedido
       const esValidoUUID = pedidoData.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pedidoData.id);
-      const pedidoId = esValidoUUID ? pedidoData.id : crypto.randomUUID();
+      const pedidoId = esValidoUUID ? pedidoData.id : generarUUIDSeguro();
 
       // 2. Guardar en tabla 'pedidos' sin .select() (para no requerir permiso de lectura en clientes anónimos)
       const payloadPedido = {
@@ -372,32 +405,49 @@ const SupabaseBridge = (() => {
         return false;
       }
 
-      // Si se actualizaron items y el id es UUID válido, refrescar pedido_items
-      if (esUUID && Array.isArray(pedido.items) && pedido.items.length > 0) {
-        try {
-          await client.from('pedido_items').delete().eq('pedido_id', pedido.id);
-          const itemsPayload = pedido.items.map(item => {
-            const esItemUUID = item.productoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.productoId);
-            return {
-              pedido_id: pedido.id,
-              producto_id: esItemUUID ? item.productoId : null,
-              nombre: item.nombre,
-              precio_unitario: Number(item.precioUnitario) || 0,
-              cantidad: Number(item.cantidad) || 1,
-              subtotal: Number(item.subtotal) || 0,
-              tipo_stock: item.tipoStock || 'terminado'
-            };
-          });
-          await client.from('pedido_items').insert(itemsPayload);
-        } catch(errItems) {
-          console.warn('Aviso actualizando items en Supabase:', errItems);
-        }
-      }
-
-      console.log('✓ Pedido actualizado en Supabase:', pedido.codigo || pedido.id);
+      console.log('✓ Pedido actualizado en Supabase:', pedido.codigo || pedido.id, '->', pedido.estado);
       return true;
     } catch(e) {
       console.warn('Aviso: error actualizando pedido en Supabase:', e);
+      return false;
+    }
+  }
+
+  async function repararItemsDuplicadosEnNube(pedidoId, itemsLimpios){
+    if (!client || !pedidoId || !Array.isArray(itemsLimpios) || itemsLimpios.length === 0) return false;
+    try {
+      const esUUID = pedidoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pedidoId);
+      if (!esUUID) return false;
+
+      console.log('🧹 Limpiando y deduplicando items en Supabase para el pedido:', pedidoId);
+      const { error: errDel } = await client.from('pedido_items').delete().eq('pedido_id', pedidoId);
+      if (errDel) {
+        console.warn('Aviso borrando items duplicados en Supabase:', errDel);
+        return false;
+      }
+      
+      const payload = itemsLimpios.map(item => {
+        const esItemUUID = item.productoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.productoId);
+        return {
+          pedido_id: pedidoId,
+          producto_id: esItemUUID ? item.productoId : null,
+          nombre: item.nombre,
+          precio_unitario: Number(item.precioUnitario) || 0,
+          cantidad: Number(item.cantidad) || 1,
+          subtotal: Number(item.subtotal) || 0,
+          tipo_stock: item.tipoStock || 'terminado'
+        };
+      });
+
+      const { error: errIns } = await client.from('pedido_items').insert(payload);
+      if (errIns) {
+        console.warn('Aviso insertando items deduplicados en Supabase:', errIns);
+        return false;
+      }
+      console.log('✓ Items reparados y deduplicados con éxito en Supabase:', itemsLimpios.length);
+      return true;
+    } catch(e) {
+      console.warn('Aviso reparando items duplicados:', e);
       return false;
     }
   }
@@ -503,6 +553,7 @@ const SupabaseBridge = (() => {
     enviarPedido,
     actualizarPedidoNube,
     actualizarPedido: actualizarPedidoNube,
+    repararItemsDuplicadosEnNube,
     eliminarPedidoNube,
     eliminarPedido: eliminarPedidoNube,
     guardarVentasNube,
