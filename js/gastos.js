@@ -16,12 +16,20 @@ const Gastos = (() => {
           <div class="subtitle">Compras y gastos del negocio</div>
         </div>
         <div class="header-actions">
+          <button class="btn btn-secondary" id="btn-sync-gastos" title="Sincronizar gastos con Supabase">☁️ Sincronizar Nube</button>
           <button class="btn btn-primary" id="btn-nuevo-gasto">${App.svgIcon('plus')} Nuevo gasto</button>
         </div>
       </div>
       <div class="card"><div id="gastos-table"></div></div>
     `;
     document.getElementById('btn-nuevo-gasto').addEventListener('click', () => openForm());
+    document.getElementById('btn-sync-gastos')?.addEventListener('click', async () => {
+      if (typeof SupabaseBridge !== 'undefined') {
+        App.toast('Sincronizando gastos con Supabase...');
+        await SupabaseBridge.sincronizarTodo(true);
+        render(container);
+      }
+    });
     renderTable();
 
     function renderTable(){
@@ -131,8 +139,11 @@ const Gastos = (() => {
           gastosActuales.push(registro);
         }
         Storage.save('gastos', gastosActuales);
+        if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarGastoNube === 'function') {
+          SupabaseBridge.guardarGastoNube(registro);
+        }
         App.closeModal();
-        App.toast('Gasto registrado correctamente');
+        App.toast(editing ? 'Gasto actualizado' : 'Gasto registrado correctamente');
         renderTable();
       });
     }
@@ -143,6 +154,9 @@ const Gastos = (() => {
         message: '¿Eliminar este gasto? Esta acción no se puede deshacer.',
         onConfirm: () => {
           Storage.save('gastos', Storage.get('gastos').filter(g => g.id !== id));
+          if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.eliminarGastoNube === 'function') {
+            SupabaseBridge.eliminarGastoNube(id);
+          }
           App.toast('Gasto eliminado');
           renderTable();
         }

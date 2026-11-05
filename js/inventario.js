@@ -19,6 +19,7 @@ const Inventario = (() => {
           <div class="subtitle">Materias primas, insumos y materiales</div>
         </div>
         <div class="header-actions">
+          <button class="btn btn-secondary" id="btn-sync-inventario" title="Sincronizar inventario con la nube Supabase">☁️ Sincronizar Nube</button>
           <button class="btn btn-secondary" id="btn-vaciar-inventario" style="color: var(--danger); border-color: var(--line);" title="Eliminar todos los insumos de ejemplo">🗑️ Vaciar todo</button>
           <button class="btn btn-secondary" id="btn-salida">Salida de inventario</button>
           <button class="btn btn-secondary" id="btn-entrada">Entrada de inventario</button>
@@ -37,6 +38,13 @@ const Inventario = (() => {
     document.getElementById('btn-nuevo-insumo').addEventListener('click', () => openInsumoForm());
     document.getElementById('btn-entrada').addEventListener('click', () => openMovimientoForm('entrada'));
     document.getElementById('btn-salida').addEventListener('click', () => openMovimientoForm('salida'));
+    document.getElementById('btn-sync-inventario')?.addEventListener('click', async () => {
+      if (typeof SupabaseBridge !== 'undefined') {
+        App.toast('Sincronizando inventario con la nube...');
+        await SupabaseBridge.sincronizarTodo(true);
+        render(container);
+      }
+    });
     document.getElementById('btn-vaciar-inventario')?.addEventListener('click', () => {
       const insumos = Storage.get('insumos');
       if (insumos.length === 0){
@@ -50,6 +58,9 @@ const Inventario = (() => {
         danger: true,
         onConfirm: () => {
           Storage.vaciarInventario();
+          if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.vaciarInsumosNube === 'function') {
+            SupabaseBridge.vaciarInsumosNube();
+          }
           App.toast('✓ Inventario vaciado. Listo para cargar tus materias primas.');
           render(container);
         }
@@ -229,8 +240,11 @@ const Inventario = (() => {
           insumosActuales.push(registro);
         }
         Storage.save('insumos', insumosActuales);
+        if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarInsumoNube === 'function') {
+          SupabaseBridge.guardarInsumoNube(registro);
+        }
         App.closeModal();
-        App.toast('Insumo agregado correctamente');
+        App.toast(editing ? 'Insumo actualizado' : 'Insumo agregado');
         vista = 'insumos';
         render(container);
       });
@@ -246,6 +260,9 @@ const Inventario = (() => {
         onConfirm: () => {
           localStorage.setItem('gp_pasteleriaSeedApplied', '1');
           Storage.save('insumos', insumos.filter(i => i.id !== id));
+          if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.eliminarInsumoNube === 'function') {
+            SupabaseBridge.eliminarInsumoNube(id);
+          }
           App.toast('Insumo eliminado');
           render(container);
         }
@@ -328,29 +345,41 @@ const Inventario = (() => {
         if (tipo === 'entrada') insumo.fechaUltimaCompra = Storage.todayISO();
         insumosActuales[idx] = insumo;
         Storage.save('insumos', insumosActuales);
+        if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarInsumoNube === 'function') {
+          SupabaseBridge.guardarInsumoNube(insumo);
+        }
 
         const costo = tipo === 'entrada' ? Number(document.getElementById('m-costo').value || 0) : 0;
         const motivo = document.getElementById('m-motivo').value.trim();
 
         const movimientos = Storage.get('movimientosInventario');
-        movimientos.push({
+        const nuevoMov = {
           id: Storage.generateId('mov'), fecha: Storage.todayISO(), insumoId: insumo.id,
           insumoNombre: insumo.nombre, tipo, cantidad: Number(cantidad), costo, motivo,
           creadoEn: Date.now()
-        });
+        };
+        movimientos.push(nuevoMov);
         Storage.save('movimientosInventario', movimientos);
+
+        if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarMovimientoNube === 'function') {
+          SupabaseBridge.guardarMovimientoNube(nuevoMov);
+        }
 
         // Registrar también como gasto si corresponde (evitando duplicar)
         const tambienGasto = tipo === 'entrada' && document.getElementById('m-tambien-gasto') && document.getElementById('m-tambien-gasto').checked;
         if (tambienGasto && costo > 0){
           const gastos = Storage.get('gastos');
-          gastos.push({
+          const nuevoGasto = {
             id: Storage.generateId('gasto'), fecha: Storage.todayISO(), tipo: 'Materias primas',
             descripcion: `Compra de ${cantidad} ${insumo.unidadMedida} de ${insumo.nombre}`,
             proveedor: insumo.proveedor || '', monto: costo, medioPago: 'Otro',
             observaciones: 'Generado automáticamente desde Inventario', origenInventario: true, demo: false
-          });
+          };
+          gastos.push(nuevoGasto);
           Storage.save('gastos', gastos);
+          if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarGastoNube === 'function') {
+            SupabaseBridge.guardarGastoNube(nuevoGasto);
+          }
         }
 
         App.closeModal();

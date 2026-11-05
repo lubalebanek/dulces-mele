@@ -7,6 +7,10 @@ const SupabaseBridge = (() => {
   let client = null;
   let isConnected = false;
 
+  function esUUID(str){
+    return typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+  }
+
   function generarUUIDSeguro(){
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
       try {
@@ -65,9 +69,479 @@ const SupabaseBridge = (() => {
   async function iniciarSincronizacionAdmin(){
     const user = await getCurrentUser();
     if (!user) return false;
-    await sincronizarPedidos();
+    await sincronizarTodo();
     subscribirCambiosEnTiempoReal();
     return true;
+  }
+
+  async function sincronizarTodo(mostrarToast = false){
+    if (!client) return null;
+    try {
+      console.log('🔄 Iniciando sincronización integral con Supabase...');
+      const rProd = await sincronizarProductos();
+      const rIns = await sincronizarInsumos();
+      const rRec = await sincronizarRecetas();
+      const rGas = await sincronizarGastos();
+      const rMov = await sincronizarMovimientosInventario();
+      const rPed = await sincronizarPedidos();
+
+      console.log('✅ Sincronización integral con Supabase completada con éxito.');
+      if (mostrarToast && window.App && typeof App.toast === 'function'){
+        App.toast('☁️ Sincronización con la nube completada.');
+      }
+      return { productos: rProd, insumos: rIns, recetas: rRec, gastos: rGas, movimientos: rMov, pedidos: rPed };
+    } catch(err) {
+      console.error('Error durante sincronización integral:', err);
+      if (mostrarToast && window.App && typeof App.toast === 'function'){
+        App.toast('Error sincronizando con la nube: ' + (err.message || 'revisa tu conexión'), 'error');
+      }
+      return null;
+    }
+  }
+
+  async function sincronizarProductos(){
+    if (!client) return 0;
+    try {
+      const { data: productosNube, error } = await client.from('productos').select('*');
+      if (error) {
+        console.warn('Aviso sincronizando productos:', error);
+        return 0;
+      }
+      const productosLocal = Storage.get('productos') || [];
+
+      if (productosNube && productosNube.length > 0) {
+        const idMap = new Map();
+        const recetasLocal = Storage.get('recetas') || [];
+        let recetasCambiaron = false;
+
+        productosNube.forEach(pNube => {
+          const normNombre = (pNube.nombre || '').trim().toLowerCase();
+          const pLocal = productosLocal.find(p => p.id === pNube.id || (p.nombre || '').trim().toLowerCase() === normNombre);
+          if (pLocal) {
+            if (pLocal.id !== pNube.id) {
+              idMap.set(pLocal.id, pNube.id);
+            }
+            pLocal.id = pNube.id;
+            pLocal.nombre = pNube.nombre;
+            pLocal.categoria = pNube.categoria;
+            pLocal.precioVenta = Number(pNube.precio_venta) || 0;
+            pLocal.unidadVenta = pNube.unidad_venta || 'unidad';
+            pLocal.tipoStock = pNube.tipo_stock || 'terminado';
+            pLocal.stockActual = Number(pNube.stock_actual) || 0;
+            pLocal.stockMinimo = Number(pNube.stock_minimo) || 0;
+            pLocal.descripcion = pNube.descripcion || '';
+            pLocal.imagenUrl = pNube.imagen_url || '';
+            pLocal.estado = pNube.estado || 'activo';
+          } else {
+            productosLocal.push({
+              id: pNube.id,
+              nombre: pNube.nombre,
+              categoria: pNube.categoria,
+              precioVenta: Number(pNube.precio_venta) || 0,
+              unidadVenta: pNube.unidad_venta || 'unidad',
+              tipoStock: pNube.tipo_stock || 'terminado',
+              stockActual: Number(pNube.stock_actual) || 0,
+              stockMinimo: Number(pNube.stock_minimo) || 0,
+              descripcion: pNube.descripcion || '',
+              imagenUrl: pNube.imagen_url || '',
+              estado: pNube.estado || 'activo',
+              demo: false
+            });
+          }
+        });
+
+        if (idMap.size > 0) {
+          recetasLocal.forEach(r => {
+            if (idMap.has(r.productoId)) {
+              r.productoId = idMap.get(r.productoId);
+              recetasCambiaron = true;
+            }
+          });
+          if (recetasCambiaron) {
+            Storage.save('recetas', recetasLocal);
+          }
+        }
+
+        Storage.save('productos', productosLocal);
+        return productosLocal.length;
+      } else if (productosLocal.length > 0) {
+        console.log('⬆️ Subiendo catálogo local de productos a Supabase...');
+        for (const p of productosLocal) {
+          try {
+            await guardarProducto(p);
+          } catch(e) {}
+        }
+        return productosLocal.length;
+      }
+      return 0;
+    } catch(e) {
+      console.warn('Error sincronizando productos:', e);
+      return 0;
+    }
+  }
+
+  async function sincronizarInsumos(){
+    if (!client) return 0;
+    try {
+      let { data: insumosNube, error } = await client.from('insumos').select('*').order('nombre', { ascending: true });
+      if (error) {
+        console.warn('Aviso sincronizando insumos:', error);
+        return 0;
+      }
+
+      const insumosLocal = Storage.get('insumos') || [];
+
+      if (insumosNube && insumosNube.length > 0) {
+        const nubeIds = new Set(insumosNube.map(i => i.id));
+        const nubeNombres = new Set(insumosNube.map(i => (i.nombre || '').trim().toLowerCase()));
+
+        // Subir insumos locales que aún no existan en la nube
+        const faltantesEnNube = insumosLocal.filter(loc => 
+          !nubeIds.has(loc.id) && !nubeNombres.has((loc.nombre || '').trim().toLowerCase()) && !loc.demo
+        );
+
+        if (faltantesEnNube.length > 0) {
+          console.log(`⬆️ Subiendo ${faltantesEnNube.length} insumos locales a Supabase...`);
+          for (const ins of faltantesEnNube) {
+            await guardarInsumoNube(ins);
+          }
+          const { data: refreshed } = await client.from('insumos').select('*').order('nombre', { ascending: true });
+          if (refreshed) insumosNube = refreshed;
+        }
+
+        const sincronizados = insumosNube.map(r => ({
+          id: r.id,
+          nombre: r.nombre || '',
+          categoria: r.categoria || 'Materias primas',
+          unidadMedida: r.unidad_medida || 'kg',
+          stockActual: Number(r.stock_actual) || 0,
+          stockMinimo: Number(r.stock_minimo) || 0,
+          costoUnitario: Number(r.costo_unitario) || 0,
+          proveedor: r.proveedor || '',
+          fechaUltimaCompra: r.fecha_ultima_compra || '',
+          estado: r.estado || 'activo',
+          demo: false
+        }));
+
+        Storage.save('insumos', sincronizados);
+        localStorage.setItem('gp_pasteleriaSeedApplied', '1');
+        console.log(`✓ ${sincronizados.length} insumos sincronizados desde Supabase`);
+        return sincronizados.length;
+      } else if (insumosLocal.length > 0) {
+        console.log(`⬆️ Subiendo ${insumosLocal.length} insumos de este navegador a Supabase...`);
+        for (const ins of insumosLocal) {
+          await guardarInsumoNube(ins);
+        }
+        localStorage.setItem('gp_pasteleriaSeedApplied', '1');
+        return insumosLocal.length;
+      }
+      return 0;
+    } catch(e) {
+      console.warn('Error sincronizando insumos:', e);
+      return 0;
+    }
+  }
+
+  async function guardarInsumoNube(insumo){
+    if (!client || !insumo) return false;
+    try {
+      const idValido = esUUID(insumo.id) ? insumo.id : generarUUIDSeguro();
+      insumo.id = idValido;
+      const payload = {
+        id: idValido,
+        nombre: insumo.nombre || 'Insumo',
+        categoria: insumo.categoria || 'Materias primas',
+        unidad_medida: insumo.unidadMedida || 'kg',
+        stock_actual: Number(insumo.stockActual) || 0,
+        stock_minimo: Number(insumo.stockMinimo) || 0,
+        costo_unitario: Number(insumo.costoUnitario) || 0,
+        proveedor: insumo.proveedor || '',
+        fecha_ultima_compra: insumo.fechaUltimaCompra || null,
+        estado: insumo.estado || 'activo'
+      };
+      const { error } = await client.from('insumos').upsert([payload]);
+      if (error) {
+        console.warn('Aviso guardando insumo en Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch(e) {
+      console.warn('Error guardando insumo en Supabase:', e);
+      return false;
+    }
+  }
+
+  async function eliminarInsumoNube(id){
+    if (!client || !id) return false;
+    try {
+      const { error } = await client.from('insumos').delete().eq('id', id);
+      return !error;
+    } catch(e) {
+      console.warn('Error eliminando insumo en Supabase:', e);
+      return false;
+    }
+  }
+
+  async function vaciarInsumosNube(){
+    if (!client) return false;
+    try {
+      await client.from('insumos').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await client.from('movimientos_inventario').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      return true;
+    } catch(e) {
+      console.warn('Error vaciando inventario en Supabase:', e);
+      return false;
+    }
+  }
+
+  async function sincronizarRecetas(){
+    if (!client) return 0;
+    try {
+      let { data: recetasNube, error } = await client.from('recetas').select('*');
+      if (error) {
+        console.warn('Aviso sincronizando recetas:', error);
+        return 0;
+      }
+
+      const recetasLocal = Storage.get('recetas') || [];
+
+      if (recetasNube && recetasNube.length > 0) {
+        const nubeProdIds = new Set(recetasNube.map(r => r.producto_id));
+
+        const faltantesEnNube = recetasLocal.filter(loc => loc.productoId && !nubeProdIds.has(loc.productoId));
+        if (faltantesEnNube.length > 0) {
+          console.log(`⬆️ Subiendo ${faltantesEnNube.length} recetas locales a Supabase...`);
+          for (const r of faltantesEnNube) {
+            await guardarRecetaNube(r);
+          }
+          const { data: refreshed } = await client.from('recetas').select('*');
+          if (refreshed) recetasNube = refreshed;
+        }
+
+        const sincronizadas = recetasNube.map(r => ({
+          id: r.id,
+          productoId: r.producto_id,
+          rendimiento: Number(r.rendimiento) || 1,
+          unidadRendimiento: r.unidad_rendimiento || 'unidad',
+          costoEmpaque: Number(r.costo_empaque) || 0,
+          otrosCostos: Number(r.otros_costos) || 0,
+          margenDeseado: Number(r.margen_deseado) || 60,
+          instrucciones: r.instrucciones || '',
+          ingredientes: Array.isArray(r.ingredientes) ? r.ingredientes : [],
+          actualizadoEn: r.actualizado_en ? new Date(r.actualizado_en).getTime() : Date.now()
+        }));
+
+        Storage.save('recetas', sincronizadas);
+        console.log(`✓ ${sincronizadas.length} recetas sincronizadas desde Supabase`);
+        return sincronizadas.length;
+      } else if (recetasLocal.length > 0) {
+        console.log(`⬆️ Subiendo ${recetasLocal.length} recetas locales a Supabase...`);
+        for (const r of recetasLocal) {
+          await guardarRecetaNube(r);
+        }
+        return recetasLocal.length;
+      }
+      return 0;
+    } catch(e) {
+      console.warn('Error sincronizando recetas:', e);
+      return 0;
+    }
+  }
+
+  async function guardarRecetaNube(receta){
+    if (!client || !receta || !receta.productoId) return false;
+    try {
+      const idValido = esUUID(receta.id) ? receta.id : generarUUIDSeguro();
+      receta.id = idValido;
+      const payload = {
+        id: idValido,
+        producto_id: receta.productoId,
+        rendimiento: Number(receta.rendimiento) || 1,
+        unidad_rendimiento: receta.unidadRendimiento || 'unidad',
+        costo_empaque: Number(receta.costoEmpaque) || 0,
+        otros_costos: Number(receta.otrosCostos) || 0,
+        margen_deseado: Number(receta.margenDeseado) || 60,
+        instrucciones: receta.instrucciones || '',
+        ingredientes: Array.isArray(receta.ingredientes) ? receta.ingredientes : [],
+        actualizado_en: new Date().toISOString()
+      };
+      const { error } = await client.from('recetas').upsert([payload], { onConflict: 'producto_id' });
+      if (error) {
+        console.warn('Aviso guardando receta en Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch(e) {
+      console.warn('Error guardando receta en Supabase:', e);
+      return false;
+    }
+  }
+
+  async function eliminarRecetaNube(productoId){
+    if (!client || !productoId) return false;
+    try {
+      const { error } = await client.from('recetas').delete().eq('producto_id', productoId);
+      return !error;
+    } catch(e) {
+      console.warn('Error eliminando receta en Supabase:', e);
+      return false;
+    }
+  }
+
+  async function sincronizarGastos(){
+    if (!client) return 0;
+    try {
+      let { data: gastosNube, error } = await client.from('gastos').select('*').order('fecha', { ascending: false });
+      if (error) {
+        console.warn('Aviso sincronizando gastos:', error);
+        return 0;
+      }
+
+      const gastosLocal = Storage.get('gastos') || [];
+
+      if (gastosNube && gastosNube.length > 0) {
+        const nubeIds = new Set(gastosNube.map(g => g.id));
+        const faltantes = gastosLocal.filter(loc => !nubeIds.has(loc.id) && !loc.demo);
+
+        if (faltantes.length > 0) {
+          console.log(`⬆️ Subiendo ${faltantes.length} gastos locales a Supabase...`);
+          for (const g of faltantes) {
+            await guardarGastoNube(g);
+          }
+          const { data: refreshed } = await client.from('gastos').select('*').order('fecha', { ascending: false });
+          if (refreshed) gastosNube = refreshed;
+        }
+
+        const sincronizados = gastosNube.map(g => ({
+          id: g.id,
+          fecha: g.fecha || '',
+          tipo: g.categoria || 'Otros',
+          descripcion: g.descripcion || '',
+          proveedor: g.proveedor || '',
+          monto: Number(g.monto) || 0,
+          medioPago: g.medio_pago || 'Efectivo',
+          observaciones: g.observaciones || '',
+          origenInventario: !!g.origen_inventario,
+          demo: false
+        }));
+
+        Storage.save('gastos', sincronizados);
+        console.log(`✓ ${sincronizados.length} gastos sincronizados desde Supabase`);
+        return sincronizados.length;
+      } else if (gastosLocal.length > 0) {
+        console.log(`⬆️ Subiendo ${gastosLocal.length} gastos locales a Supabase...`);
+        for (const g of gastosLocal) {
+          await guardarGastoNube(g);
+        }
+        return gastosLocal.length;
+      }
+      return 0;
+    } catch(e) {
+      console.warn('Error sincronizando gastos:', e);
+      return 0;
+    }
+  }
+
+  async function guardarGastoNube(gasto){
+    if (!client || !gasto) return false;
+    try {
+      const idValido = esUUID(gasto.id) ? gasto.id : generarUUIDSeguro();
+      gasto.id = idValido;
+      const payload = {
+        id: idValido,
+        fecha: gasto.fecha || new Date().toISOString().slice(0,10),
+        categoria: gasto.tipo || gasto.categoria || 'Otros',
+        descripcion: gasto.descripcion || 'Gasto',
+        proveedor: gasto.proveedor || '',
+        monto: Number(gasto.monto) || 0,
+        medio_pago: gasto.medioPago || gasto.medio_pago || 'Efectivo',
+        observaciones: gasto.observaciones || '',
+        origen_inventario: !!gasto.origenInventario
+      };
+      const { error } = await client.from('gastos').upsert([payload]);
+      if (error) {
+        console.warn('Aviso guardando gasto en Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch(e) {
+      console.warn('Error guardando gasto en Supabase:', e);
+      return false;
+    }
+  }
+
+  async function eliminarGastoNube(id){
+    if (!client || !id) return false;
+    try {
+      const { error } = await client.from('gastos').delete().eq('id', id);
+      return !error;
+    } catch(e) {
+      console.warn('Error eliminando gasto en Supabase:', e);
+      return false;
+    }
+  }
+
+  async function sincronizarMovimientosInventario(){
+    if (!client) return 0;
+    try {
+      const { data: movsNube, error } = await client.from('movimientos_inventario').select('*').order('creado_en', { ascending: false });
+      if (error) return 0;
+
+      const movsLocal = Storage.get('movimientosInventario') || [];
+
+      if (movsNube && movsNube.length > 0) {
+        const nubeIds = new Set(movsNube.map(m => m.id));
+        const faltantes = movsLocal.filter(loc => !nubeIds.has(loc.id));
+        if (faltantes.length > 0) {
+          for (const m of faltantes) {
+            await guardarMovimientoNube(m);
+          }
+        }
+        const sincronizados = movsNube.map(m => ({
+          id: m.id,
+          fecha: m.fecha,
+          insumoId: m.insumo_id,
+          insumoNombre: m.insumo_nombre,
+          tipo: m.tipo,
+          cantidad: Number(m.cantidad) || 0,
+          costo: Number(m.costo) || 0,
+          motivo: m.motivo || '',
+          creadoEn: m.creado_en ? new Date(m.creado_en).getTime() : Date.now()
+        }));
+        Storage.save('movimientosInventario', sincronizados);
+        return sincronizados.length;
+      } else if (movsLocal.length > 0) {
+        for (const m of movsLocal) {
+          await guardarMovimientoNube(m);
+        }
+        return movsLocal.length;
+      }
+      return 0;
+    } catch(e) {
+      console.warn('Error sincronizando movimientos:', e);
+      return 0;
+    }
+  }
+
+  async function guardarMovimientoNube(mov){
+    if (!client || !mov) return false;
+    try {
+      const idValido = esUUID(mov.id) ? mov.id : generarUUIDSeguro();
+      const payload = {
+        id: idValido,
+        fecha: mov.fecha || new Date().toISOString().slice(0,10),
+        insumo_id: esUUID(mov.insumoId) ? mov.insumoId : null,
+        insumo_nombre: mov.insumoNombre || '',
+        tipo: mov.tipo || 'entrada',
+        cantidad: Number(mov.cantidad) || 0,
+        costo: Number(mov.costo) || 0,
+        motivo: mov.motivo || ''
+      };
+      await client.from('movimientos_inventario').insert([payload]);
+      return true;
+    } catch(e) {
+      return false;
+    }
   }
 
   async function sincronizarPedidos() {
@@ -548,6 +1022,20 @@ const SupabaseBridge = (() => {
     signIn,
     signOut,
     iniciarSincronizacionAdmin,
+    sincronizarTodo,
+    sincronizarProductos,
+    sincronizarInsumos,
+    guardarInsumoNube,
+    eliminarInsumoNube,
+    vaciarInsumosNube,
+    sincronizarRecetas,
+    guardarRecetaNube,
+    eliminarRecetaNube,
+    sincronizarGastos,
+    guardarGastoNube,
+    eliminarGastoNube,
+    sincronizarMovimientosInventario,
+    guardarMovimientoNube,
     fetchProductos,
     guardarProducto,
     enviarPedido,

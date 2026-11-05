@@ -698,12 +698,20 @@ function crearPedido({
       recetas.push(receta);
     }
     save('recetas', recetas);
+
+    if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarRecetaNube === 'function') {
+      SupabaseBridge.guardarRecetaNube(receta);
+    }
+
     return receta;
   }
 
   function eliminarReceta(productoId){
     const recetas = get('recetas');
     save('recetas', recetas.filter(r => r.productoId !== productoId));
+    if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.eliminarRecetaNube === 'function') {
+      SupabaseBridge.eliminarRecetaNube(productoId);
+    }
   }
 
   function calcularCostoReceta(productoId){
@@ -904,12 +912,29 @@ function crearPedido({
     save('insumos', insumos);
     save('movimientosInventario', movimientos);
 
+    if (typeof SupabaseBridge !== 'undefined') {
+      receta.ingredientes.forEach(ing => {
+        const ins = insumos.find(i => i.id === ing.insumoId);
+        if (ins && typeof SupabaseBridge.guardarInsumoNube === 'function') {
+          SupabaseBridge.guardarInsumoNube(ins);
+        }
+      });
+      detalleMovimientos.forEach(m => {
+        if (typeof SupabaseBridge.guardarMovimientoNube === 'function') {
+          SupabaseBridge.guardarMovimientoNube(m);
+        }
+      });
+    }
+
     // Si el producto es de vitrina / stock terminado, sumar las unidades producidas
     const stockAnterior = Number(producto.stockActual) || 0;
     if (producto.tipoStock === 'terminado'){
       producto.stockActual = stockAnterior + cantidad;
       productos[prodIdx] = producto;
       save('productos', productos);
+      if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarProducto === 'function') {
+        SupabaseBridge.guardarProducto(producto, producto);
+      }
     }
 
     return {

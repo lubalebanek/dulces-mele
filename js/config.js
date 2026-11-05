@@ -77,6 +77,9 @@ const Config = (() => {
             <span>El script SQL para tus tablas está listo en: <code>HABILITAR_PEDIDOS_SUPABASE.sql</code></span>
             <button type="button" class="btn btn-secondary btn-sm" onclick="if(typeof SupabaseBridge !== 'undefined') SupabaseBridge.reproducirCampana()">🔔 Probar timbre de pedidos</button>
           </div>
+          <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-primary btn-sm" id="btn-sync-all-config" style="font-weight:600;">☁️ Sincronizar Todo con la Nube Ahora</button>
+          </div>
         </div>
 
         <form id="form-config-supabase" class="form-grid">
@@ -154,6 +157,14 @@ const Config = (() => {
       Storage.save('configuracion', cfg);
       App.toast('Credenciales de Supabase guardadas');
       render(container);
+    });
+
+    document.getElementById('btn-sync-all-config')?.addEventListener('click', async () => {
+      if (typeof SupabaseBridge !== 'undefined') {
+        App.toast('Sincronizando inventario, recetas y gastos con Supabase...');
+        await SupabaseBridge.sincronizarTodo(true);
+        render(container);
+      }
     });
 
     document.getElementById('btn-exportar').addEventListener('click', () => {

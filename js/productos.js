@@ -21,6 +21,7 @@ const Productos = (() => {
           <div class="subtitle">Catálogo de venta, recetas, costeo de insumos y hornadas</div>
         </div>
         <div class="header-actions">
+          <button class="btn btn-secondary" id="btn-sync-productos" title="Sincronizar productos y recetas con Supabase">☁️ Sincronizar Nube</button>
           <button class="btn btn-secondary" id="btn-seed-pasteleria" title="Cargar insumos y recetas sugeridas de pastelería">
             ✨ Cargar Recetas Base
           </button>
@@ -39,6 +40,13 @@ const Productos = (() => {
     `;
 
     document.getElementById('btn-nuevo-producto').addEventListener('click', () => openForm());
+    document.getElementById('btn-sync-productos')?.addEventListener('click', async () => {
+      if (typeof SupabaseBridge !== 'undefined') {
+        App.toast('Sincronizando productos y recetas con Supabase...');
+        await SupabaseBridge.sincronizarTodo(true);
+        render(container);
+      }
+    });
     document.getElementById('btn-seed-pasteleria').addEventListener('click', () => {
       App.confirmAction({
         title: 'Cargar recetas e insumos base',
