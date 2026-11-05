@@ -86,6 +86,13 @@ const Storage = (() => {
       telefonoWhatsApp: '+56964790920',
       datosTransferencia: 'Nombre: Andrea Lebanek / Rut: 14.738.359-2 /Banco Estado / Cuenta RUT',
       cuposDiariosTortas: 5,
+      tiendaActiva: true,
+      mensajeCierre: 'Por el momento los pedidos online están cerrados. La compra se debe realizar de manera presencial en nuestro local.',
+      fechaLimitePedidos: '',
+      horarioCorte: '',
+      diasEntregaPermitidos: [4], // 4 = Jueves
+      direccionLocal: 'Francisco Ramírez 10',
+      horarioAtencionLocal: '10:00 a 19:00 hrs',
       supabaseUrl: 'https://mdbftytjmpvakibgdavt.supabase.co',
       supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kYmZ0eXRqbXB2YWtpYmdkYXZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNjAwOTcsImV4cCI6MjEwNzczNjA5N30.k-0H5RZsCHIPT4LUy-D-eRMQ9xQsLyJUtIS-B7nR9H4'
     };

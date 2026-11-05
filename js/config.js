@@ -63,6 +63,88 @@ const Config = (() => {
         </form>
       </div>
 
+      <!-- Control de Horarios de Pedidos y Días de Entrega (Tienda Online) -->
+      <div class="card" style="border-left: 4px solid var(--berry);">
+        <h3 class="card-title mt-0">🕒 Horarios de Pedidos Online y Días de Entrega</h3>
+        <p class="text-soft">Configura cuándo está habilitada la página de pedidos (<code>pedir.html</code>), límites de horario y qué días de la semana realizas entregas y despachos.</p>
+        
+        <form id="form-config-horarios" class="form-grid" style="margin-top: 14px;">
+          <!-- Estado de la tienda -->
+          <div class="field full">
+            <label style="font-weight:700;">Estado de la Tienda Online</label>
+            <div style="display:flex; gap:16px; margin-top:6px; flex-wrap:wrap;">
+              <label class="flex gap-8" style="align-items:center; cursor:pointer;">
+                <input type="radio" name="cfg-tienda-estado" value="abierta" ${config.tiendaActiva !== false ? 'checked' : ''} style="width:auto;" />
+                <span class="badge badge-sage">🟢 Abierta (Recibiendo pedidos online)</span>
+              </label>
+              <label class="flex gap-8" style="align-items:center; cursor:pointer;">
+                <input type="radio" name="cfg-tienda-estado" value="cerrada" ${config.tiendaActiva === false ? 'checked' : ''} style="width:auto;" />
+                <span class="badge badge-amber">🔴 Cerrada / Solo venta presencial</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Límite de horario / Fecha de corte -->
+          <div class="field">
+            <label>Fecha y hora límite de pedidos (Opcional)</label>
+            <input type="datetime-local" id="cfg-fecha-limite" value="${escapeHtml(config.fechaLimitePedidos || '')}" />
+            <div class="form-hint">Ej: Configura el día hasta las 12:00. Al llegar esa hora, la web se inhabilitará automáticamente.</div>
+          </div>
+
+          <div class="field">
+            <label>Hora límite de corte diario (Opcional)</label>
+            <input type="time" id="cfg-horario-corte" value="${escapeHtml(config.horarioCorte || '')}" />
+            <div class="form-hint">Ej: 12:00. Si está configurado, no se recibirán pedidos después de esta hora cada día.</div>
+          </div>
+
+          <!-- Días de entrega permitidos -->
+          <div class="field full">
+            <label style="font-weight:700;">Días de la semana permitidos para Entrega / Despacho</label>
+            <p class="form-hint" style="margin-top:2px;">Los clientes solo podrán seleccionar estos días en el calendario de entrega de la tienda (por defecto: solo Jueves).</p>
+            <div style="display:flex; gap:12px; margin-top:8px; flex-wrap:wrap;" id="box-dias-semana">
+              ${[
+                { num: 1, nom: 'Lunes' },
+                { num: 2, nom: 'Martes' },
+                { num: 3, nom: 'Miércoles' },
+                { num: 4, nom: 'Jueves' },
+                { num: 5, nom: 'Viernes' },
+                { num: 6, nom: 'Sábado' },
+                { num: 0, nom: 'Domingo' }
+              ].map(d => {
+                const checked = (config.diasEntregaPermitidos || [4]).includes(d.num);
+                return `
+                  <label class="flex gap-8" style="align-items:center; background:var(--surface-2); padding:6px 12px; border-radius:var(--radius-sm); border:1px solid var(--line); font-size:13px; font-weight:600; cursor:pointer;">
+                    <input type="checkbox" class="chk-dia-entrega" value="${d.num}" ${checked ? 'checked' : ''} style="width:auto;" />
+                    ${d.nom}
+                  </label>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- Mensaje para cuando la tienda está inhabilitada -->
+          <div class="field full">
+            <label>Mensaje mostrado a los clientes cuando la tienda esté cerrada</label>
+            <textarea id="cfg-mensaje-cierre" rows="2">${escapeHtml(config.mensajeCierre || 'Por el momento los pedidos online están cerrados. La compra se debe realizar de manera presencial en nuestro local.')}</textarea>
+          </div>
+
+          <!-- Datos de atención presencial -->
+          <div class="field">
+            <label>Dirección para compra presencial</label>
+            <input type="text" id="cfg-dir-local" value="${escapeHtml(config.direccionLocal || 'Francisco Ramírez 10')}" placeholder="Ej: Francisco Ramírez 10" />
+          </div>
+
+          <div class="field">
+            <label>Horario de atención presencial en local</label>
+            <input type="text" id="cfg-horario-local" value="${escapeHtml(config.horarioAtencionLocal || '10:00 a 19:00 hrs')}" placeholder="Ej: 10:00 a 19:00 hrs" />
+          </div>
+
+          <div class="field full" style="display:flex; justify-content:flex-end;">
+            <button type="submit" class="btn btn-primary" style="font-weight:700;">💾 Guardar Horarios y Restricciones</button>
+          </div>
+        </form>
+      </div>
+
       <!-- Conexión a Supabase (Nube) -->
       <div class="card">
         <h3 class="card-title mt-0">Conexión a la Nube (Supabase)</h3>
@@ -137,7 +219,7 @@ const Config = (() => {
     `;
 
     // Eventos para guardar datos del negocio
-    document.getElementById('form-config-negocio').addEventListener('submit', (e) => {
+    document.getElementById('form-config-negocio').addEventListener('submit', async (e) => {
       e.preventDefault();
       const cfg = Storage.get('configuracion') || {};
       cfg.nombreNegocio = document.getElementById('cfg-nombre').value.trim();
@@ -145,7 +227,41 @@ const Config = (() => {
       cfg.datosTransferencia = document.getElementById('cfg-transferencia').value.trim();
       cfg.cuposDiariosTortas = Number(document.getElementById('cfg-cupos').value) || 5;
       Storage.save('configuracion', cfg);
-      App.toast('Datos del negocio guardados correctamente');
+      if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarConfiguracionNube === 'function') {
+        await SupabaseBridge.guardarConfiguracionNube(cfg);
+      }
+      App.toast('Datos del negocio guardados y sincronizados');
+    });
+
+    // Eventos para guardar Horarios y Días de Entrega
+    document.getElementById('form-config-horarios')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const cfg = Storage.get('configuracion') || {};
+
+      const tiendaEstado = document.querySelector('input[name="cfg-tienda-estado"]:checked')?.value;
+      cfg.tiendaActiva = tiendaEstado !== 'cerrada';
+      cfg.fechaLimitePedidos = document.getElementById('cfg-fecha-limite').value;
+      cfg.horarioCorte = document.getElementById('cfg-horario-corte').value;
+      cfg.mensajeCierre = document.getElementById('cfg-mensaje-cierre').value.trim();
+      cfg.direccionLocal = document.getElementById('cfg-dir-local').value.trim();
+      cfg.horarioAtencionLocal = document.getElementById('cfg-horario-local').value.trim();
+
+      const checkboxes = document.querySelectorAll('.chk-dia-entrega:checked');
+      const diasSeleccionados = Array.from(checkboxes).map(c => Number(c.value));
+      if (diasSeleccionados.length === 0) {
+        App.toast('Debes seleccionar al menos un día permitido para entregas (ej: Jueves).', 'error');
+        return;
+      }
+      cfg.diasEntregaPermitidos = diasSeleccionados;
+
+      Storage.save('configuracion', cfg);
+
+      if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarConfiguracionNube === 'function') {
+        await SupabaseBridge.guardarConfiguracionNube(cfg);
+      }
+
+      App.toast('✓ Horarios de pedidos y días de entrega guardados en la nube');
+      render(container);
     });
 
     // Eventos para guardar Supabase

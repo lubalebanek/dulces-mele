@@ -78,6 +78,7 @@ const SupabaseBridge = (() => {
     if (!client) return null;
     try {
       console.log('🔄 Iniciando sincronización integral con Supabase...');
+      const rCfg = await sincronizarConfiguracion();
       const rProd = await sincronizarProductos();
       const rIns = await sincronizarInsumos();
       const rRec = await sincronizarRecetas();
@@ -89,12 +90,94 @@ const SupabaseBridge = (() => {
       if (mostrarToast && window.App && typeof App.toast === 'function'){
         App.toast('☁️ Sincronización con la nube completada.');
       }
-      return { productos: rProd, insumos: rIns, recetas: rRec, gastos: rGas, movimientos: rMov, pedidos: rPed };
+      return { config: rCfg, productos: rProd, insumos: rIns, recetas: rRec, gastos: rGas, movimientos: rMov, pedidos: rPed };
     } catch(err) {
       console.error('Error durante sincronización integral:', err);
       if (mostrarToast && window.App && typeof App.toast === 'function'){
         App.toast('Error sincronizando con la nube: ' + (err.message || 'revisa tu conexión'), 'error');
       }
+      return null;
+    }
+  }
+
+  async function fetchConfiguracion(){
+    if (!client) return null;
+    try {
+      const { data, error } = await client.from('configuracion').select('*').eq('id', 'general').maybeSingle();
+      if (error) {
+        console.warn('Aviso leyendo configuración de Supabase:', error);
+        return null;
+      }
+      return data;
+    } catch(e) {
+      console.warn('Error leyendo configuración de Supabase:', e);
+      return null;
+    }
+  }
+
+  async function guardarConfiguracionNube(configData){
+    if (!client || !configData) return false;
+    try {
+      const payload = {
+        id: 'general',
+        nombre_negocio: configData.nombreNegocio || 'Dulces Mele',
+        telefono_whatsapp: configData.telefonoWhatsApp || '+56964790920',
+        datos_transferencia: configData.datosTransferencia || '',
+        cupos_diarios_tortas: Number(configData.cuposDiariosTortas) || 5,
+        permitir_stock_negativo: !!configData.permitirStockNegativo,
+        tienda_activa: configData.tiendaActiva !== false,
+        mensaje_cierre: configData.mensajeCierre || 'Por el momento los pedidos online están cerrados. La compra se debe realizar de manera presencial en nuestro local.',
+        fecha_limite_pedidos: configData.fechaLimitePedidos || '',
+        horario_corte: configData.horarioCorte || '',
+        dias_entrega_permitidos: Array.isArray(configData.diasEntregaPermitidos) ? configData.diasEntregaPermitidos : [4],
+        direccion_local: configData.direccionLocal || 'Francisco Ramírez 10',
+        horario_atencion_local: configData.horarioAtencionLocal || '10:00 a 19:00 hrs',
+        actualizado_en: new Date().toISOString()
+      };
+      const { error } = await client.from('configuracion').upsert([payload], { onConflict: 'id' });
+      if (error) {
+        console.warn('Aviso guardando configuración en Supabase:', error);
+        return false;
+      }
+      console.log('✓ Configuración guardada en Supabase');
+      return true;
+    } catch(e) {
+      console.warn('Error guardando configuración en Supabase:', e);
+      return false;
+    }
+  }
+
+  async function sincronizarConfiguracion(){
+    if (!client) return null;
+    try {
+      const confNube = await fetchConfiguracion();
+      const confLocal = Storage.get('configuracion') || {};
+
+      if (confNube) {
+        const merge = {
+          ...confLocal,
+          nombreNegocio: confNube.nombre_negocio || confLocal.nombreNegocio,
+          telefonoWhatsApp: confNube.telefono_whatsapp || confLocal.telefonoWhatsApp,
+          datosTransferencia: confNube.datos_transferencia || confLocal.datosTransferencia,
+          cuposDiariosTortas: confNube.cupos_diarios_tortas ?? confLocal.cuposDiariosTortas,
+          permitirStockNegativo: confNube.permitir_stock_negativo ?? confLocal.permitirStockNegativo,
+          tiendaActiva: confNube.tienda_activa ?? confLocal.tiendaActiva ?? true,
+          mensajeCierre: confNube.mensaje_cierre || confLocal.mensajeCierre || '',
+          fechaLimitePedidos: confNube.fecha_limite_pedidos ?? confLocal.fechaLimitePedidos ?? '',
+          horarioCorte: confNube.horario_corte ?? confLocal.horarioCorte ?? '',
+          diasEntregaPermitidos: confNube.dias_entrega_permitidos || confLocal.diasEntregaPermitidos || [4],
+          direccionLocal: confNube.direccion_local || confLocal.direccionLocal || 'Francisco Ramírez 10',
+          horarioAtencionLocal: confNube.horario_atencion_local || confLocal.horarioAtencionLocal || '10:00 a 19:00 hrs'
+        };
+        Storage.save('configuracion', merge);
+        return merge;
+      } else if (confLocal) {
+        await guardarConfiguracionNube(confLocal);
+        return confLocal;
+      }
+      return null;
+    } catch(e) {
+      console.warn('Error sincronizando configuración:', e);
       return null;
     }
   }
@@ -1076,6 +1159,9 @@ const SupabaseBridge = (() => {
     eliminarGastoNube,
     sincronizarMovimientosInventario,
     guardarMovimientoNube,
+    fetchConfiguracion,
+    guardarConfiguracionNube,
+    sincronizarConfiguracion,
     fetchProductos,
     guardarProducto,
     actualizarStockProductoNube,
