@@ -242,6 +242,31 @@
     </div>
   </div>
 
+  <!-- Banner de Tienda Cerrada / Compra Presencial (se muestra cuando aplique restricción u hora de corte) -->
+  <div id="store-closed-banner" style="display: none; background: #FFF8E7; border: 2px solid #E6B800; border-radius: var(--radius-md); padding: 20px 24px; margin-bottom: 24px; box-shadow: var(--shadow);">
+    <div style="display: flex; align-items: flex-start; gap: 14px;">
+      <div style="font-size: 32px; line-height: 1;">🏪</div>
+      <div style="flex: 1;">
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
+          <span class="badge badge-amber" style="font-weight: 700; font-size: 12px;">⚠️ PEDIDOS ONLINE CERRADOS</span>
+        </div>
+        <h3 style="margin: 0 0 6px 0; font-size: 18px; color: #7A5200;">Venta de manera presencial en nuestro local</h3>
+        <p id="store-closed-message" style="margin: 0 0 12px 0; font-size: 14px; line-height: 1.5; color: #5C4308;"></p>
+        
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 13.5px; color: #4A3B18; background: rgba(255,255,255,0.7); padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid rgba(230,184,0,0.3);">
+          <div id="store-closed-dir">📍 <strong>Dirección:</strong> Francisco Ramírez 10</div>
+          <div id="store-closed-horario">🕒 <strong>Horario de atención:</strong> 10:00 a 19:00 hrs</div>
+        </div>
+
+        <div style="margin-top: 12px;">
+          <a id="store-closed-whatsapp-btn" href="#" target="_blank" class="btn btn-secondary btn-sm" style="background: #25D366; color: white; border: none; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
+            💬 ¿Dudas? Escríbenos por WhatsApp
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Navegación por Categorías -->
   <div class="category-nav" id="category-nav"></div>
 
@@ -268,8 +293,8 @@
 
 <!-- Scripts de almacenamiento y nube -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/storage.js?v=17"></script>
-<script src="js/supabase-client.js?v=17"></script>
+<script src="js/storage.js?v=18"></script>
+<script src="js/supabase-client.js?v=18"></script>
 
 <script>
   /* Lógica de la Tienda Pública */
@@ -280,13 +305,37 @@
 
     async function init(){
       Storage.init();
-      // Si Supabase está conectado, sincronizar productos frescos desde la nube
+      // Si Supabase está conectado, sincronizar configuración y productos frescos desde la nube
       if (typeof SupabaseBridge !== 'undefined'){
         if (!SupabaseBridge.isConnected) {
           SupabaseBridge.init();
         }
         if (SupabaseBridge.isConnected) {
           try {
+            // Traer configuración fresca de Supabase (horarios, cortes, días de entrega)
+            if (typeof SupabaseBridge.fetchConfiguracion === 'function') {
+              const confNube = await SupabaseBridge.fetchConfiguracion();
+              if (confNube) {
+                const confLocal = Storage.get('configuracion') || {};
+                const merge = {
+                  ...confLocal,
+                  nombreNegocio: confNube.nombre_negocio || confLocal.nombreNegocio,
+                  telefonoWhatsApp: confNube.telefono_whatsapp || confLocal.telefonoWhatsApp,
+                  datosTransferencia: confNube.datos_transferencia || confLocal.datosTransferencia,
+                  cuposDiariosTortas: confNube.cupos_diarios_tortas ?? confLocal.cuposDiariosTortas,
+                  permitirStockNegativo: confNube.permitir_stock_negativo ?? confLocal.permitirStockNegativo,
+                  tiendaActiva: confNube.tienda_activa ?? confLocal.tiendaActiva ?? true,
+                  mensajeCierre: confNube.mensaje_cierre || confLocal.mensajeCierre || '',
+                  fechaLimitePedidos: confNube.fecha_limite_pedidos ?? confLocal.fechaLimitePedidos ?? '',
+                  horarioCorte: confNube.horario_corte ?? confLocal.horarioCorte ?? '',
+                  diasEntregaPermitidos: confNube.dias_entrega_permitidos || confLocal.diasEntregaPermitidos || [4],
+                  direccionLocal: confNube.direccion_local || confLocal.direccionLocal || 'Francisco Ramírez 10',
+                  horarioAtencionLocal: confNube.horario_atencion_local || confLocal.horarioAtencionLocal || '10:00 a 19:00 hrs'
+                };
+                Storage.save('configuracion', merge);
+              }
+            }
+
             const prodsNube = await SupabaseBridge.fetchProductos();
             if (prodsNube && prodsNube.length > 0){
               Storage.save('productos', prodsNube.map(p => ({
@@ -308,8 +357,74 @@
           }
         }
       }
+      actualizarBannerEstadoTienda();
       renderCategorias();
       renderCatalogo();
+    }
+
+    function verificarEstadoTienda(){
+      const config = Storage.get('configuracion') || {};
+      const ahora = new Date();
+      let cerrada = false;
+      let motivo = '';
+
+      // 1. Cierre manual por admin
+      if (config.tiendaActiva === false) {
+        cerrada = true;
+        motivo = config.mensajeCierre || 'Por el momento los pedidos online están cerrados. La compra se debe realizar de manera presencial en nuestro local.';
+      }
+
+      // 2. Fecha y hora límite específica (ej: Jueves a las 12:00)
+      if (!cerrada && config.fechaLimitePedidos) {
+        const limite = new Date(config.fechaLimitePedidos);
+        if (!isNaN(limite.getTime()) && ahora > limite) {
+          cerrada = true;
+          const dia = String(limite.getDate()).padStart(2, '0');
+          const mes = String(limite.getMonth() + 1).padStart(2, '0');
+          const hora = String(limite.getHours()).padStart(2, '0');
+          const min = String(limite.getMinutes()).padStart(2, '0');
+          motivo = `El plazo para realizar pedidos online finalizó (${dia}/${mes} a las ${hora}:${min} hrs). ` +
+            (config.mensajeCierre || 'La compra se debe realizar de manera presencial en nuestro local.');
+        }
+      }
+
+      // 3. Horario de corte diario (ej: 12:00)
+      if (!cerrada && config.horarioCorte) {
+        const [hCorte, mCorte] = config.horarioCorte.split(':').map(Number);
+        if (!isNaN(hCorte)) {
+          const minActual = ahora.getHours() * 60 + ahora.getMinutes();
+          const minCorte = hCorte * 60 + (mCorte || 0);
+          if (minActual >= minCorte) {
+            cerrada = true;
+            motivo = `Los pedidos online se reciben hasta las ${config.horarioCorte} hrs. ` +
+              (config.mensajeCierre || 'La compra se debe realizar de manera presencial en nuestro local.');
+          }
+        }
+      }
+
+      return { cerrada, motivo, config };
+    }
+
+    function actualizarBannerEstadoTienda(){
+      const { cerrada, motivo, config } = verificarEstadoTienda();
+      const banner = document.getElementById('store-closed-banner');
+      if (!banner) return;
+
+      if (cerrada) {
+        banner.style.display = 'block';
+        const msgEl = document.getElementById('store-closed-message');
+        if (msgEl) msgEl.textContent = motivo;
+        const dirEl = document.getElementById('store-closed-dir');
+        if (dirEl) dirEl.innerHTML = `📍 <strong>Dirección para compra presencial:</strong> ${escapeHtml(config.direccionLocal || 'Francisco Ramírez 10')}`;
+        const horEl = document.getElementById('store-closed-horario');
+        if (horEl) horEl.innerHTML = `🕒 <strong>Horario de atención:</strong> ${escapeHtml(config.horarioAtencionLocal || '10:00 a 19:00 hrs')}`;
+
+        const phone = (config.telefonoWhatsApp || '56964790920').replace(/[^\d]/g, '');
+        const btnWa = document.getElementById('store-closed-whatsapp-btn');
+        if (btnWa) btnWa.href = `https://wa.me/${phone}?text=Hola%20Dulces%20Mele,%20deseo%20consultar%20por%20la%20compra%20presencial%20en%20el%20local`;
+      } else {
+        banner.style.display = 'none';
+      }
     }
 
     function formatCLP(val){
@@ -334,6 +449,7 @@
     }
 
     function renderCatalogo(){
+      const { cerrada: tiendaCerrada } = verificarEstadoTienda();
       let productos = Storage.get('productos').filter(p => p.estado === 'activo');
       if (categoriaActiva !== 'Todas'){
         productos = productos.filter(p => p.categoria === categoriaActiva);
@@ -377,7 +493,11 @@
             </div>
 
             <div style="display: flex; gap: 8px; align-items: center; margin-top: 12px;">
-              ${agotado ? `
+              ${tiendaCerrada ? `
+                <button class="btn btn-secondary" disabled style="width: 100%; opacity: 0.85; font-size: 13.5px; font-weight: 600; background: var(--surface-2); border-color: var(--line);">
+                  🏪 Solo compra presencial
+                </button>
+              ` : agotado ? `
                 <button class="btn btn-secondary" disabled style="width: 100%; opacity: 0.6;">Agotado</button>
               ` : `
                 <div class="qty-control">
@@ -405,6 +525,12 @@
     }
 
     function addToCart(prodId){
+      const { cerrada, motivo } = verificarEstadoTienda();
+      if (cerrada) {
+        alert(motivo || 'Los pedidos online están cerrados en este momento.');
+        return;
+      }
+
       const productos = Storage.get('productos');
       const prod = productos.find(p => p.id === prodId);
       if (!prod) return;
@@ -450,6 +576,12 @@
     }
 
     function openCheckout(){
+      const { cerrada, motivo } = verificarEstadoTienda();
+      if (cerrada) {
+        alert(motivo || 'Los pedidos online están cerrados. La compra se debe realizar de manera presencial.');
+        return;
+      }
+
       const itemKeys = Object.keys(items);
       if (itemKeys.length === 0){
         alert('Tu pedido está vacío. Elige tus productos favoritos primero.');
@@ -491,6 +623,39 @@ function renderCheckoutModalContent(){
       const minDate = new Date();
       if (tieneTortas) minDate.setDate(minDate.getDate() + 1); // Tortas requieren mín 24-48h
       const minDateISO = minDate.toISOString().slice(0, 10);
+
+      // Generar fechas permitidas según días configurados (por defecto Jueves)
+      const rawDias = config.diasEntregaPermitidos;
+      const diasPermitidos = (Array.isArray(rawDias) && rawDias.length > 0)
+        ? rawDias.map(Number)
+        : [4]; // Por defecto solo jueves (4)
+
+      const nombresDias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+      const nombresMeses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+      const fechasDisponibles = [];
+      const cursor = new Date();
+      if (tieneTortas) {
+        cursor.setDate(cursor.getDate() + 1);
+      }
+
+      for (let i = 0; i < 60 && fechasDisponibles.length < 8; i++) {
+        const diaSemana = cursor.getDay();
+        if (diasPermitidos.includes(diaSemana)) {
+          const yyyy = cursor.getFullYear();
+          const mm = String(cursor.getMonth() + 1).padStart(2, '0');
+          const dd = String(cursor.getDate()).padStart(2, '0');
+          const iso = `${yyyy}-${mm}-${dd}`;
+          const diaNombre = nombresDias[diaSemana];
+          const mesNombre = nombresMeses[cursor.getMonth()];
+          const texto = `${diaNombre} ${cursor.getDate()} de ${mesNombre}`;
+          fechasDisponibles.push({
+            iso,
+            texto: fechasDisponibles.length === 0 ? `${texto} (Próxima entrega)` : texto
+          });
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
 
       const body = document.getElementById('checkout-body');
       body.innerHTML = `
@@ -542,8 +707,17 @@ function renderCheckoutModalContent(){
               <input type="text" id="cli-direccion" placeholder="Calle, número, departamento, comuna" />
             </div>
             <div class="field">
-              <label>Fecha en que necesitas tu pedido *</label>
-              <input type="date" id="cli-fecha" min="${minDateISO}" value="${minDateISO}" required />
+              <label>Fecha de entrega / retiro *</label>
+              ${fechasDisponibles.length > 0 ? `
+                <select id="cli-fecha" required style="width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 14px; background: var(--surface);">
+                  ${fechasDisponibles.map(f => `<option value="${f.iso}">${f.texto}</option>`).join('')}
+                </select>
+                <div class="text-soft" style="font-size: 11.5px; margin-top: 4px; color: var(--berry); font-weight: 600;">
+                  🗓️ Días de entrega agendados: ${diasPermitidos.map(d => nombresDias[d]).join(', ')}
+                </div>
+              ` : `
+                <input type="date" id="cli-fecha" min="${minDateISO}" value="${minDateISO}" required />
+              `}
             </div>
             <div class="field">
               <label>Horario preferido</label>
@@ -614,6 +788,12 @@ function renderCheckoutModalContent(){
     }
 
     async function enviarPedido(){
+      const { cerrada, motivo } = verificarEstadoTienda();
+      if (cerrada) {
+        alert(motivo || 'Los pedidos online están cerrados. La compra se debe realizar de manera presencial en nuestro local.');
+        return;
+      }
+
       if (isSubmitting) return;
       isSubmitting = true;
 

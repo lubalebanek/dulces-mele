@@ -106,8 +106,39 @@ CREATE TABLE IF NOT EXISTS movimientos_inventario (
     creado_en TIMESTAMPTZ DEFAULT timezone('utc'::text, now())
 );
 
--- 6. PRIVILEGIOS DE TABLA (GRANT) PARA anon, authenticated Y service_role
--- Permite guardar pedidos, ventas, inventario, recetas y gastos sin errores 403 Forbidden
+-- 6. TABLA PARA CONFIGURACIÓN (Horarios de corte, días de entrega y cierre)
+CREATE TABLE IF NOT EXISTS configuracion (
+    id TEXT PRIMARY KEY DEFAULT 'general',
+    nombre_negocio TEXT DEFAULT 'Dulces Mele',
+    telefono_whatsapp TEXT DEFAULT '+56964790920',
+    datos_transferencia TEXT DEFAULT 'Nombre: Andrea Lebanek / Rut: 14.738.359-2 / Banco Estado / Cuenta RUT',
+    cupos_diarios_tortas INT DEFAULT 5,
+    permitir_stock_negativo BOOLEAN DEFAULT FALSE,
+    tienda_activa BOOLEAN DEFAULT TRUE,
+    mensaje_cierre TEXT DEFAULT 'Por el momento los pedidos online están cerrados. La compra se debe realizar de manera presencial en nuestro local.',
+    fecha_limite_pedidos TEXT DEFAULT '',
+    horario_corte TEXT DEFAULT '',
+    dias_entrega_permitidos JSONB DEFAULT '[4]'::jsonb,
+    direccion_local TEXT DEFAULT 'Francisco Ramírez 10',
+    horario_atencion_local TEXT DEFAULT '10:00 a 19:00 hrs',
+    actualizado_en TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS configuracion ADD COLUMN IF NOT EXISTS tienda_activa BOOLEAN DEFAULT TRUE;
+ALTER TABLE IF EXISTS configuracion ADD COLUMN IF NOT EXISTS mensaje_cierre TEXT DEFAULT 'Por el momento los pedidos online están cerrados. La compra se debe realizar de manera presencial en nuestro local.';
+ALTER TABLE IF EXISTS configuracion ADD COLUMN IF NOT EXISTS fecha_limite_pedidos TEXT DEFAULT '';
+ALTER TABLE IF EXISTS configuracion ADD COLUMN IF NOT EXISTS horario_corte TEXT DEFAULT '';
+ALTER TABLE IF EXISTS configuracion ADD COLUMN IF NOT EXISTS dias_entrega_permitidos JSONB DEFAULT '[4]'::jsonb;
+ALTER TABLE IF EXISTS configuracion ADD COLUMN IF NOT EXISTS direccion_local TEXT DEFAULT 'Francisco Ramírez 10';
+ALTER TABLE IF EXISTS configuracion ADD COLUMN IF NOT EXISTS horario_atencion_local TEXT DEFAULT '10:00 a 19:00 hrs';
+ALTER TABLE IF EXISTS configuracion ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMPTZ DEFAULT NOW();
+
+INSERT INTO configuracion (id, nombre_negocio, telefono_whatsapp, tienda_activa, dias_entrega_permitidos)
+VALUES ('general', 'Dulces Mele', '+56964790920', TRUE, '[4]'::jsonb)
+ON CONFLICT (id) DO NOTHING;
+
+-- 7. PRIVILEGIOS DE TABLA (GRANT) PARA anon, authenticated Y service_role
+-- Permite guardar pedidos, ventas, inventario, recetas, gastos y configuración sin errores 403 Forbidden
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
@@ -121,12 +152,13 @@ GRANT ALL ON TABLE insumos TO anon, authenticated, service_role;
 GRANT ALL ON TABLE recetas TO anon, authenticated, service_role;
 GRANT ALL ON TABLE gastos TO anon, authenticated, service_role;
 GRANT ALL ON TABLE movimientos_inventario TO anon, authenticated, service_role;
+GRANT ALL ON TABLE configuracion TO anon, authenticated, service_role;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated, service_role;
 
--- 7. Habilitar seguridad por fila (RLS)
+-- 8. Habilitar seguridad por fila (RLS)
 ALTER TABLE IF EXISTS pedidos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS pedido_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS productos ENABLE ROW LEVEL SECURITY;
@@ -135,8 +167,9 @@ ALTER TABLE IF EXISTS insumos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS recetas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS gastos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS movimientos_inventario ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS configuracion ENABLE ROW LEVEL SECURITY;
 
--- 8. Políticas de acceso total para la pastelería
+-- 9. Políticas de acceso total para la pastelería
 DROP POLICY IF EXISTS "Admin acceso total pedidos" ON pedidos;
 CREATE POLICY "Admin acceso total pedidos" ON pedidos FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
@@ -160,6 +193,10 @@ CREATE POLICY "Admin acceso total gastos" ON gastos FOR ALL TO authenticated, an
 
 DROP POLICY IF EXISTS "Admin acceso total movimientos_inventario" ON movimientos_inventario;
 CREATE POLICY "Admin acceso total movimientos_inventario" ON movimientos_inventario FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Acceso total config" ON configuracion;
+DROP POLICY IF EXISTS "Admin acceso total config" ON configuracion;
+CREATE POLICY "Admin acceso total config" ON configuracion FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
 -- 9. ⚡ DESCUENTO AUTOMÁTICO DE STOCK EN PRODUCTOS TERMINADOS (GALLETAS / ALFAJORES)
 CREATE OR REPLACE FUNCTION descontar_stock_pedido()
