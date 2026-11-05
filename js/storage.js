@@ -304,6 +304,9 @@ const Storage = (() => {
     if (idx !== -1 && productos[idx].tipoStock === 'terminado'){
       productos[idx].stockActual = Math.max(0, (Number(productos[idx].stockActual) || 0) - Number(cantidad));
       save('productos', productos);
+      if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.actualizarStockProductoNube === 'function') {
+        SupabaseBridge.actualizarStockProductoNube(productos[idx].id, productos[idx].stockActual);
+      }
       return true;
     }
     return false;
@@ -315,6 +318,9 @@ const Storage = (() => {
     if (idx !== -1 && productos[idx].tipoStock === 'terminado'){
       productos[idx].stockActual = (Number(productos[idx].stockActual) || 0) + Number(cantidad);
       save('productos', productos);
+      if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.actualizarStockProductoNube === 'function') {
+        SupabaseBridge.actualizarStockProductoNube(productos[idx].id, productos[idx].stockActual);
+      }
       return true;
     }
     return false;
@@ -912,28 +918,33 @@ function crearPedido({
     save('insumos', insumos);
     save('movimientosInventario', movimientos);
 
-    if (typeof SupabaseBridge !== 'undefined') {
-      receta.ingredientes.forEach(ing => {
-        const ins = insumos.find(i => i.id === ing.insumoId);
-        if (ins && typeof SupabaseBridge.guardarInsumoNube === 'function') {
-          SupabaseBridge.guardarInsumoNube(ins);
-        }
-      });
-      detalleMovimientos.forEach(m => {
-        if (typeof SupabaseBridge.guardarMovimientoNube === 'function') {
-          SupabaseBridge.guardarMovimientoNube(m);
-        }
-      });
-    }
-
     // Si el producto es de vitrina / stock terminado, sumar las unidades producidas
     const stockAnterior = Number(producto.stockActual) || 0;
-    if (producto.tipoStock === 'terminado'){
+    const esTerminado = producto.tipoStock === 'terminado';
+    if (esTerminado){
       producto.stockActual = stockAnterior + cantidad;
       productos[prodIdx] = producto;
       save('productos', productos);
-      if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.guardarProducto === 'function') {
-        SupabaseBridge.guardarProducto(producto, producto);
+    }
+
+    if (typeof SupabaseBridge !== 'undefined') {
+      try {
+        receta.ingredientes.forEach(ing => {
+          const ins = insumos.find(i => i.id === ing.insumoId);
+          if (ins && typeof SupabaseBridge.guardarInsumoNube === 'function') {
+            SupabaseBridge.guardarInsumoNube(ins);
+          }
+        });
+        detalleMovimientos.forEach(m => {
+          if (typeof SupabaseBridge.guardarMovimientoNube === 'function') {
+            SupabaseBridge.guardarMovimientoNube(m);
+          }
+        });
+        if (esTerminado && typeof SupabaseBridge.actualizarStockProductoNube === 'function') {
+          SupabaseBridge.actualizarStockProductoNube(producto.id, producto.stockActual);
+        }
+      } catch(e) {
+        console.warn('Error sincronizando hornada con Supabase:', e);
       }
     }
 
@@ -942,7 +953,7 @@ function crearPedido({
       cantidadProducida: cantidad,
       stockAnterior,
       stockNuevo: producto.stockActual,
-      esTerminado: producto.tipoStock === 'terminado',
+      esTerminado,
       movimientos: detalleMovimientos
     };
   }

@@ -808,39 +808,79 @@ const SupabaseBridge = (() => {
     }
   }
 
+  async function actualizarStockProductoNube(productoId, nuevoStock){
+    if (!client || !productoId) return false;
+    try {
+      const stockNum = Math.max(0, Number(nuevoStock) || 0);
+      let res = null;
+
+      if (esUUID(productoId)) {
+        res = await client.from('productos').update({ stock_actual: stockNum }).eq('id', productoId);
+      }
+
+      if (!res || res.error) {
+        const productosLocal = (typeof Storage !== 'undefined' && typeof Storage.get === 'function')
+          ? Storage.get('productos') || []
+          : [];
+        const prod = productosLocal.find(p => p.id === productoId);
+        if (prod && prod.nombre) {
+          res = await client.from('productos').update({ stock_actual: stockNum }).eq('nombre', prod.nombre);
+        }
+      }
+
+      if (res && res.error) {
+        console.warn('Aviso actualizando stock en Supabase:', res.error);
+        return false;
+      }
+      console.log(`✓ Stock actualizado en Supabase para producto (${productoId}): ${stockNum}`);
+      return true;
+    } catch(e) {
+      console.warn('Error actualizando stock de producto en Supabase:', e);
+      return false;
+    }
+  }
+
   async function guardarProducto(producto, existente = null){
     if (!client) throw new Error('No hay conexión con Supabase.');
     const user = await getCurrentUser();
     if (!user) throw new Error('Inicia sesión en el panel de administración para guardar productos en la nube.');
 
-    const columnas = {
-      nombre: 'nombre', categoria: 'categoria', precioVenta: 'precio_venta',
-      unidadVenta: 'unidad_venta', tipoStock: 'tipo_stock', stockActual: 'stock_actual',
-      descripcion: 'descripcion', imagenUrl: 'imagen_url', estado: 'estado'
-    };
-    const normalizar = (clave, valor) => ['precioVenta', 'stockActual', 'stockMinimo'].includes(clave) ? Number(valor) || 0 : (valor ?? '');
-    let payload = {};
+    const targetId = (existente && existente.id) || producto.id;
+    const esTargetUUID = esUUID(targetId);
 
-    if (existente){
-      const { data: coincidencias, error: buscarError } = await client.from('productos').select('id').eq('nombre', existente.nombre);
-      if (buscarError) throw buscarError;
-      if (!coincidencias || coincidencias.length !== 1){
-        throw new Error(coincidencias?.length > 1 ? 'Hay más de un producto con ese nombre en Supabase; no se guardó para evitar modificar el incorrecto.' : 'No encontré este producto en Supabase. No se guardaron cambios locales.');
+    const payload = {
+      nombre: producto.nombre || 'Producto',
+      categoria: producto.categoria || 'Pastelería',
+      precio_venta: Number(producto.precioVenta) || 0,
+      unidad_venta: producto.unidadVenta || 'unidad',
+      tipo_stock: producto.tipoStock || 'terminado',
+      stock_actual: Number(producto.stockActual) || 0,
+      stock_minimo: Number(producto.stockMinimo) || 5,
+      descripcion: producto.descripcion || '',
+      imagen_url: producto.imagenUrl || '',
+      estado: producto.estado || 'activo'
+    };
+
+    if (targetId && esTargetUUID) {
+      const { data, error } = await client.from('productos').update(payload).eq('id', targetId).select('id').single();
+      if (!error && data) return data;
+      if (error && error.code !== 'PGRST116') {
+        console.warn('Aviso actualizando producto por ID:', error);
       }
-      for (const clave of Object.keys(columnas)){
-        if (normalizar(clave, producto[clave]) !== normalizar(clave, existente[clave])) payload[columnas[clave]] = normalizar(clave, producto[clave]);
-      }
-      if (Object.keys(payload).length === 0) return { id: coincidencias[0].id };
-      const { data, error } = await client.from('productos').update(payload).eq('id', coincidencias[0].id).select('id').single();
-      if (error) throw error;
-      return data;
     }
 
-    for (const clave of Object.keys(columnas)) payload[columnas[clave]] = normalizar(clave, producto[clave]);
-    payload.stock_minimo = Number(producto.stockMinimo) || 5;
-    const { data, error } = await client.from('productos').insert(payload).select('id').single();
-    if (error) throw error;
-    return data;
+    const targetNombre = (existente && existente.nombre) || producto.nombre;
+    if (targetNombre) {
+      const { data: coincidencias } = await client.from('productos').select('id').eq('nombre', targetNombre);
+      if (coincidencias && coincidencias.length === 1) {
+        const { data, error } = await client.from('productos').update(payload).eq('id', coincidencias[0].id).select('id').single();
+        if (!error && data) return data;
+      }
+    }
+
+    const { data: nuevo, error: errInsert } = await client.from('productos').insert(payload).select('id').single();
+    if (errInsert) throw errInsert;
+    return nuevo;
   }
 
   async function actualizarPedidoNube(pedido){
@@ -1038,6 +1078,7 @@ const SupabaseBridge = (() => {
     guardarMovimientoNube,
     fetchProductos,
     guardarProducto,
+    actualizarStockProductoNube,
     enviarPedido,
     actualizarPedidoNube,
     actualizarPedido: actualizarPedidoNube,

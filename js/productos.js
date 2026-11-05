@@ -802,6 +802,9 @@ const Productos = (() => {
       });
 
       bodyEl.querySelector('#btn-confirmar-produccion').addEventListener('click', () => {
+        const btn = bodyEl.querySelector('#btn-confirmar-produccion');
+        btn.disabled = true;
+        btn.textContent = 'Registrando hornada...';
         const motivo = bodyEl.querySelector('#prod-motivo').value.trim();
         try {
           const res = Storage.producirLote({
@@ -815,6 +818,8 @@ const Productos = (() => {
           const main = document.getElementById('main-content');
           Productos.render(main);
         } catch(err) {
+          btn.disabled = false;
+          btn.textContent = '🍳 Confirmar Hornada y Descontar Bodega';
           App.toast(err.message, 'error');
         }
       });
