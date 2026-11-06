@@ -198,24 +198,11 @@ DROP POLICY IF EXISTS "Acceso total config" ON configuracion;
 DROP POLICY IF EXISTS "Admin acceso total config" ON configuracion;
 CREATE POLICY "Admin acceso total config" ON configuracion FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);
 
--- 9. ⚡ DESCUENTO AUTOMÁTICO DE STOCK EN PRODUCTOS TERMINADOS (GALLETAS / ALFAJORES)
-CREATE OR REPLACE FUNCTION descontar_stock_pedido()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.tipo_stock = 'terminado' AND NEW.producto_id IS NOT NULL THEN
-        UPDATE productos
-        SET stock_actual = GREATEST(0, stock_actual - NEW.cantidad)
-        WHERE id = NEW.producto_id;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
+-- 9. ⚡ ELIMINAR TRIGGER DUPLICADO DE DESCUENTO EN PEDIDOS
+-- El descuento de stock de productos terminados lo gestiona la aplicación web de manera controlada.
+-- Desactivamos este trigger para evitar que el stock se descuente 2 veces por cada pedido.
 DROP TRIGGER IF EXISTS trigger_descontar_stock ON pedido_items;
-CREATE TRIGGER trigger_descontar_stock
-AFTER INSERT ON pedido_items
-FOR EACH ROW
-EXECUTE FUNCTION descontar_stock_pedido();
+DROP FUNCTION IF EXISTS descontar_stock_pedido();
 
 -- 10. 🔔 ACTIVAR TIEMPO REAL (WEBSOCKET) PARA CAMPANA EN EL PANEL DE GESTIÓN
 DO $$
@@ -234,3 +221,7 @@ USING pedido_items b
 WHERE a.ctid > b.ctid
   AND a.pedido_id = b.pedido_id
   AND a.nombre = b.nombre;
+
+-- 12. 🍪 ELIMINAR PRODUCTO NO DESEADO DE SUPABASE SI EXISTE
+DELETE FROM recetas WHERE producto_id IN (SELECT id FROM productos WHERE LOWER(TRIM(nombre)) LIKE '%frambuesa chocolate blanco%');
+DELETE FROM productos WHERE LOWER(TRIM(nombre)) LIKE '%frambuesa chocolate blanco%';
