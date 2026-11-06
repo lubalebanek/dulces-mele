@@ -954,17 +954,17 @@ const Productos = (() => {
   function handleDelete(id){
     const productos = Storage.get('productos');
     const prod = productos.find(p => p.id === id);
+    if (!prod) return;
     const ventas = Storage.get('ventas');
     const tieneVentas = ventas.some(v => v.productoId === id);
     App.confirmAction({
       title: 'Eliminar producto',
       message: tieneVentas
-        ? `"${prod.nombre}" tiene ventas registradas. Las ventas históricas se conservarán con su precio original, pero el producto ya no aparecerá disponible para nuevas ventas.`
-        : `¿Eliminar "${prod.nombre}"? Esta acción no se puede deshacer.`,
+        ? `"${prod.nombre}" tiene ventas registradas. Las ventas históricas se conservarán con su precio original, pero el producto ya no aparecerá disponible para nuevas ventas ni en la tienda.`
+        : `¿Eliminar "${prod.nombre}"? Esta acción lo borrará del catálogo y de la base de datos en la nube.`,
       onConfirm: () => {
-        Storage.save('productos', productos.filter(p => p.id !== id));
-        Storage.eliminarReceta(id);
-        App.toast('Producto eliminado');
+        Storage.eliminarProducto(id);
+        App.toast(`Producto "${prod.nombre}" eliminado`);
         const main = document.getElementById('main-content');
         render(main);
       }

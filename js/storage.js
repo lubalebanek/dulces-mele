@@ -117,7 +117,7 @@ const Storage = (() => {
       const catalogo = [
         ['Galletas de café','Galletas'], ['Galletas de membrillo','Galletas'],
         ['Galletas de mantequilla de maní','Galletas'], ['Galletas de coco','Galletas'],
-        ['Galletas de frambuesa','Galletas'], ['Galletas de frambuesa chocolate blanco','Galletas'],
+        ['Galletas de frambuesa','Galletas'],
         ['Galletas de jengibre','Galletas'], ['Galletas de naranja','Galletas'],
         ['Galletas de limón','Galletas'], ['Galletas Chocomani','Galletas'],
         ['Galletas de nuez','Galletas'], ['Alfajores de maicena','Galletas'],
@@ -221,6 +221,14 @@ const Storage = (() => {
       save('configuracion', cfg);
     }
     applySeedIfNeeded();
+    // Limpieza automática de productos obsoletos / no deseados
+    const prodsActuales = get('productos');
+    if (Array.isArray(prodsActuales)) {
+      const filtrados = prodsActuales.filter(p => !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco'));
+      if (filtrados.length !== prodsActuales.length) {
+        save('productos', filtrados);
+      }
+    }
     if (!localStorage.getItem('gp_pasteleriaSeedApplied')){
       const ins = get('insumos');
       if (ins.length === 0){
@@ -331,6 +339,19 @@ const Storage = (() => {
       return true;
     }
     return false;
+  }
+
+  function eliminarProducto(id){
+    const productos = get('productos');
+    const prod = productos.find(p => p.id === id);
+    const nombre = prod ? prod.nombre : null;
+
+    save('productos', productos.filter(p => p.id !== id));
+    eliminarReceta(id);
+
+    if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.eliminarProductoNube === 'function') {
+      SupabaseBridge.eliminarProductoNube(id, nombre);
+    }
   }
 
 function crearPedido({
@@ -970,7 +991,7 @@ function crearPedido({
     crearPedido, actualizarPedido, eliminarPedido,
     marcarPedidoPagado, marcarPedidoPorPagar, registrarPedidoEnVentas, removerPedidoDeVentas,
     limpiarPedidosYVentas, vaciarInventario,
-    descontarStockProducto, restaurarStockProducto,
+    descontarStockProducto, restaurarStockProducto, eliminarProducto,
     seedPasteleriaSiCorresponde, convertirUnidad, getReceta, saveReceta, eliminarReceta,
     calcularCostoReceta, producirLote
   };

@@ -192,46 +192,67 @@ const SupabaseBridge = (() => {
       }
       const productosLocal = Storage.get('productos') || [];
 
+      // 1. Limpiar de inmediato en Supabase productos no deseados como 'frambuesa chocolate blanco'
       if (productosNube && productosNube.length > 0) {
+        const noDeseados = productosNube.filter(p => (p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco'));
+        for (const nd of noDeseados) {
+          try {
+            await client.from('recetas').delete().eq('producto_id', nd.id);
+            await client.from('productos').delete().eq('id', nd.id);
+          } catch(e) {}
+        }
+      }
+
+      const productosValidosNube = (productosNube || []).filter(p => !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco'));
+
+      if (productosValidosNube.length > 0) {
         const idMap = new Map();
         const recetasLocal = Storage.get('recetas') || [];
         let recetasCambiaron = false;
 
-        productosNube.forEach(pNube => {
+        const nubeIds = new Set(productosValidosNube.map(p => p.id));
+        const nubeNombres = new Set(productosValidosNube.map(p => (p.nombre || '').trim().toLowerCase()));
+
+        // Mapear el catálogo maestro de la nube
+        const productosSincronizados = productosValidosNube.map(pNube => {
           const normNombre = (pNube.nombre || '').trim().toLowerCase();
           const pLocal = productosLocal.find(p => p.id === pNube.id || (p.nombre || '').trim().toLowerCase() === normNombre);
-          if (pLocal) {
-            if (pLocal.id !== pNube.id) {
-              idMap.set(pLocal.id, pNube.id);
-            }
-            pLocal.id = pNube.id;
-            pLocal.nombre = pNube.nombre;
-            pLocal.categoria = pNube.categoria;
-            pLocal.precioVenta = Number(pNube.precio_venta) || 0;
-            pLocal.unidadVenta = pNube.unidad_venta || 'unidad';
-            pLocal.tipoStock = pNube.tipo_stock || 'terminado';
-            pLocal.stockActual = Number(pNube.stock_actual) || 0;
-            pLocal.stockMinimo = Number(pNube.stock_minimo) || 0;
-            pLocal.descripcion = pNube.descripcion || '';
-            pLocal.imagenUrl = pNube.imagen_url || '';
-            pLocal.estado = pNube.estado || 'activo';
-          } else {
-            productosLocal.push({
-              id: pNube.id,
-              nombre: pNube.nombre,
-              categoria: pNube.categoria,
-              precioVenta: Number(pNube.precio_venta) || 0,
-              unidadVenta: pNube.unidad_venta || 'unidad',
-              tipoStock: pNube.tipo_stock || 'terminado',
-              stockActual: Number(pNube.stock_actual) || 0,
-              stockMinimo: Number(pNube.stock_minimo) || 0,
-              descripcion: pNube.descripcion || '',
-              imagenUrl: pNube.imagen_url || '',
-              estado: pNube.estado || 'activo',
-              demo: false
-            });
+          if (pLocal && pLocal.id !== pNube.id) {
+            idMap.set(pLocal.id, pNube.id);
           }
+          return {
+            id: pNube.id,
+            nombre: pNube.nombre,
+            categoria: pNube.categoria,
+            precioVenta: Number(pNube.precio_venta) || 0,
+            unidadVenta: pNube.unidad_venta || 'unidad',
+            tipoStock: pNube.tipo_stock || 'terminado',
+            stockActual: Number(pNube.stock_actual) || 0,
+            stockMinimo: Number(pNube.stock_minimo) || 0,
+            descripcion: pNube.descripcion || '',
+            imagenUrl: pNube.imagen_url || '',
+            estado: pNube.estado || 'activo',
+            demo: false
+          };
         });
+
+        // Subir productos locales pendientes que no estén en la nube
+        const pendientesDeSubir = productosLocal.filter(p => 
+          !nubeIds.has(p.id) && 
+          !nubeNombres.has((p.nombre || '').trim().toLowerCase()) && 
+          !p.demo &&
+          !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco')
+        );
+
+        for (const p of pendientesDeSubir) {
+          try {
+            const subido = await guardarProducto(p);
+            if (subido && subido.id) {
+              p.id = subido.id;
+              productosSincronizados.push(p);
+            }
+          } catch(e) {}
+        }
 
         if (idMap.size > 0) {
           recetasLocal.forEach(r => {
@@ -245,16 +266,18 @@ const SupabaseBridge = (() => {
           }
         }
 
-        Storage.save('productos', productosLocal);
-        return productosLocal.length;
+        Storage.save('productos', productosSincronizados);
+        return productosSincronizados.length;
       } else if (productosLocal.length > 0) {
         console.log('⬆️ Subiendo catálogo local de productos a Supabase...');
-        for (const p of productosLocal) {
+        const validosLocal = productosLocal.filter(p => !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco'));
+        for (const p of validosLocal) {
           try {
             await guardarProducto(p);
           } catch(e) {}
         }
-        return productosLocal.length;
+        Storage.save('productos', validosLocal);
+        return validosLocal.length;
       }
       return 0;
     } catch(e) {
@@ -966,6 +989,62 @@ const SupabaseBridge = (() => {
     return nuevo;
   }
 
+  async function eliminarProductoNube(productoId, nombre = null){
+    if (!client || (!productoId && !nombre)) return false;
+    try {
+      const esIdUUID = esUUID(productoId);
+
+      // 1. Eliminar recetas vinculadas al producto en Supabase
+      if (esIdUUID) {
+        await client.from('recetas').delete().eq('producto_id', productoId);
+      }
+
+      // 2. Intentar eliminar por UUID
+      let eliminado = false;
+      if (esIdUUID) {
+        const { error } = await client.from('productos').delete().eq('id', productoId);
+        if (!error) {
+          eliminado = true;
+          console.log('✓ Producto eliminado de Supabase por UUID:', productoId);
+        } else {
+          console.warn('Aviso al eliminar producto por UUID en Supabase:', error);
+        }
+      }
+
+      // 3. Si no se pudo por UUID o si viene nombre, eliminar por nombre
+      if (!eliminado && nombre) {
+        const { data: prods } = await client.from('productos').select('id').eq('nombre', nombre);
+        if (prods && prods.length > 0) {
+          for (const p of prods) {
+            await client.from('recetas').delete().eq('producto_id', p.id);
+          }
+        }
+        const { error: errNom } = await client.from('productos').delete().eq('nombre', nombre);
+        if (!errNom) {
+          eliminado = true;
+          console.log('✓ Producto eliminado de Supabase por nombre:', nombre);
+        } else {
+          console.warn('Aviso al eliminar producto por nombre en Supabase:', errNom);
+        }
+      }
+
+      // 4. Si las restricciones de ventas históricas impiden el borrado duro, marcar como inactivo
+      if (!eliminado) {
+        console.log('Marcando producto como inactivo en Supabase para proteger ventas históricas...');
+        if (esIdUUID) {
+          await client.from('productos').update({ estado: 'inactivo' }).eq('id', productoId);
+        } else if (nombre) {
+          await client.from('productos').update({ estado: 'inactivo' }).eq('nombre', nombre);
+        }
+      }
+
+      return true;
+    } catch(e) {
+      console.warn('Error eliminando producto en Supabase:', e);
+      return false;
+    }
+  }
+
   async function actualizarPedidoNube(pedido){
     if (!client || !pedido) return false;
     try {
@@ -1164,6 +1243,8 @@ const SupabaseBridge = (() => {
     sincronizarConfiguracion,
     fetchProductos,
     guardarProducto,
+    eliminarProductoNube,
+    eliminarProducto: eliminarProductoNube,
     actualizarStockProductoNube,
     enviarPedido,
     actualizarPedidoNube,
