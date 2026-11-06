@@ -18,6 +18,7 @@ const Ventas = (() => {
           <div class="subtitle">Registra y controla cada venta de mostrador y pedidos</div>
         </div>
         <div class="header-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-secondary" id="btn-sync-ventas" title="Sincronizar ventas con Supabase">☁️ Sincronizar Nube</button>
           <button class="btn btn-primary" id="btn-pos-multiproducto" style="background:#2D6A4F; border-color:#2D6A4F; font-weight:600;">
             🛒 Venta Rápida Mesón (Carrito)
           </button>
@@ -79,6 +80,17 @@ const Ventas = (() => {
 
     document.getElementById('btn-pos-multiproducto').addEventListener('click', () => openPosModal());
     document.getElementById('btn-nueva-venta').addEventListener('click', () => openForm());
+    document.getElementById('btn-sync-ventas')?.addEventListener('click', async () => {
+      if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.sincronizarVentas === 'function') {
+        App.toast('Sincronizando ventas con la nube...');
+        await SupabaseBridge.sincronizarVentas();
+        renderTable();
+      }
+    });
+
+    if (typeof SupabaseBridge !== 'undefined' && SupabaseBridge.isConnected && typeof SupabaseBridge.sincronizarVentas === 'function') {
+      SupabaseBridge.sincronizarVentas().then(() => renderTable());
+    }
     document.getElementById('f-fecha').addEventListener('input', (e) => { filtros.fecha = e.target.value; renderTable(); });
     document.getElementById('f-producto').addEventListener('input', (e) => { filtros.producto = e.target.value; renderTable(); });
     selCat.addEventListener('change', (e) => { filtros.categoria = e.target.value; renderTable(); });
@@ -633,6 +645,9 @@ const Ventas = (() => {
       onConfirm: () => {
         const ventas = Storage.get('ventas').filter(v => v.id !== id);
         Storage.save('ventas', ventas);
+        if (typeof SupabaseBridge !== 'undefined' && typeof SupabaseBridge.eliminarVentaNube === 'function') {
+          SupabaseBridge.eliminarVentaNube(id);
+        }
         App.toast('Venta eliminada');
         App.goTo('ventas');
       }

@@ -85,12 +85,13 @@ const SupabaseBridge = (() => {
       const rGas = await sincronizarGastos();
       const rMov = await sincronizarMovimientosInventario();
       const rPed = await sincronizarPedidos();
+      const rVen = await sincronizarVentas();
 
       console.log('✅ Sincronización integral con Supabase completada con éxito.');
       if (mostrarToast && window.App && typeof App.toast === 'function'){
         App.toast('☁️ Sincronización con la nube completada.');
       }
-      return { config: rCfg, productos: rProd, insumos: rIns, recetas: rRec, gastos: rGas, movimientos: rMov, pedidos: rPed };
+      return { config: rCfg, productos: rProd, insumos: rIns, recetas: rRec, gastos: rGas, movimientos: rMov, pedidos: rPed, ventas: rVen };
     } catch(err) {
       console.error('Error durante sincronización integral:', err);
       if (mostrarToast && window.App && typeof App.toast === 'function'){
@@ -774,6 +775,111 @@ const SupabaseBridge = (() => {
     }
   }
 
+  async function sincronizarVentas(){
+    if (!client) return 0;
+    try {
+      const user = await getCurrentUser();
+      if (!user) return 0;
+
+      let { data: ventasNube, error } = await client.from('ventas').select('*').order('fecha', { ascending: false });
+      if (error) {
+        console.warn('Aviso sincronizando ventas:', error);
+        return 0;
+      }
+
+      let ventasLocal = Storage.get('ventas') || [];
+      const pedidosLocal = Storage.get('pedidos') || [];
+
+      // 1. Auto-recuperar ventas de pedidos pagados que aún no se hayan registrado
+      const nuevasDesdePedidos = [];
+      pedidosLocal.forEach(p => {
+        const estaPagado = p.pagado || (Number(p.saldoPendiente) === 0 && Number(p.total) > 0) || p.estado === 'entregado';
+        if (estaPagado && Array.isArray(p.items) && p.items.length > 0) {
+          const yaEnLocal = ventasLocal.some(v => v.pedidoId === p.id || (v.pedidoCodigo && p.codigo && v.pedidoCodigo === p.codigo));
+          const yaEnNube = (ventasNube || []).some(v => v.pedido_id === p.id);
+
+          if (!yaEnLocal && !yaEnNube) {
+            p.items.forEach(item => {
+              const idVenta = generarUUIDSeguro();
+              const nuevaVenta = {
+                id: idVenta,
+                fecha: p.fechaEntrega || Storage.todayISO(),
+                productoId: (item.productoId && esUUID(item.productoId)) ? item.productoId : null,
+                productoNombre: item.nombre || 'Producto sin nombre',
+                categoria: item.categoria || (p.tipoEntrega === 'despacho' ? 'Despacho' : 'Encargos'),
+                cantidad: Number(item.cantidad) || 1,
+                precioUnitario: Number(item.precioUnitario) || 0,
+                total: Number(item.subtotal) || (Number(item.cantidad) * Number(item.precioUnitario)),
+                medioPago: p.medioPago || 'Transferencia',
+                observaciones: `Pedido #${p.codigo || ''} — Cliente: ${p.clienteNombre || ''}`,
+                pedidoId: p.id,
+                pedidoCodigo: p.codigo || '',
+                origen: 'pedido_web',
+                creadoEn: p.creadoEn || Date.now()
+              };
+              ventasLocal.push(nuevaVenta);
+              nuevasDesdePedidos.push(nuevaVenta);
+            });
+            p.registradoEnVentas = true;
+          }
+        }
+      });
+
+      if (nuevasDesdePedidos.length > 0) {
+        console.log(`📦 Auto-generadas ${nuevasDesdePedidos.length} ventas desde pedidos pagados.`);
+        Storage.save('ventas', ventasLocal);
+        Storage.save('pedidos', pedidosLocal);
+        await guardarVentasNube(nuevasDesdePedidos);
+        const { data: refreshed } = await client.from('ventas').select('*').order('fecha', { ascending: false });
+        if (refreshed) ventasNube = refreshed;
+      }
+
+      // 2. Mapear ventas descargadas desde Supabase a almacenamiento local
+      if (ventasNube && ventasNube.length > 0) {
+        const nubeIds = new Set(ventasNube.map(v => v.id));
+
+        // Subir ventas locales que no existan aún en la nube
+        const faltantes = ventasLocal.filter(loc => !nubeIds.has(loc.id) && !loc.demo);
+        if (faltantes.length > 0) {
+          console.log(`⬆️ Subiendo ${faltantes.length} ventas locales a Supabase...`);
+          await guardarVentasNube(faltantes);
+          const { data: refreshed } = await client.from('ventas').select('*').order('fecha', { ascending: false });
+          if (refreshed) ventasNube = refreshed;
+        }
+
+        const sincronizadas = ventasNube.map(v => ({
+          id: v.id,
+          fecha: v.fecha || Storage.todayISO(),
+          productoId: v.producto_id || null,
+          productoNombre: v.producto_nombre || 'Producto',
+          categoria: v.categoria || 'Encargos',
+          cantidad: Number(v.cantidad) || 1,
+          precioUnitario: Number(v.precio_unitario) || 0,
+          total: Number(v.total) || 0,
+          medioPago: v.medio_pago || 'Transferencia',
+          observaciones: v.observaciones || '',
+          pedidoId: v.pedido_id || null,
+          pedidoCodigo: v.pedido_codigo || '',
+          origen: v.pedido_id ? 'pedido_web' : 'directa',
+          creadoEn: v.creado_en ? new Date(v.creado_en).getTime() : Date.now()
+        }));
+
+        Storage.save('ventas', sincronizadas);
+        return sincronizadas.length;
+      } else if (ventasLocal.length > 0) {
+        const paraSubir = ventasLocal.filter(v => !v.demo);
+        if (paraSubir.length > 0) {
+          await guardarVentasNube(paraSubir);
+        }
+        return ventasLocal.length;
+      }
+      return 0;
+    } catch(e) {
+      console.warn('Error sincronizando ventas:', e);
+      return 0;
+    }
+  }
+
   function reproducirCampana(){
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -823,6 +929,9 @@ const SupabaseBridge = (() => {
           if (window.App && typeof App.toast === 'function'){
             App.toast(`🧁 ¡Nuevo pedido recibido #${payload.new.codigo || ''} de ${payload.new.cliente_nombre}!`, 'success');
           }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, () => {
+          sincronizarVentas();
         })
         .subscribe();
     } catch(e) {
@@ -1169,19 +1278,25 @@ const SupabaseBridge = (() => {
   async function guardarVentasNube(ventasArray){
     if (!client || !Array.isArray(ventasArray) || ventasArray.length === 0) return;
     try {
-      const payload = ventasArray.map(v => ({
-        id: v.id,
-        fecha: v.fecha,
-        producto_id: (v.productoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.productoId)) ? v.productoId : null,
-        producto_nombre: v.productoNombre,
-        categoria: v.categoria || 'Encargos',
-        cantidad: Number(v.cantidad) || 1,
-        precio_unitario: Number(v.precioUnitario) || 0,
-        total: Number(v.total) || 0,
-        medio_pago: v.medioPago || 'Transferencia',
-        pedido_id: (v.pedidoId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.pedidoId)) ? v.pedidoId : null
-      }));
-      const { error } = await client.from('ventas').insert(payload);
+      const payload = ventasArray.map(v => {
+        const idValido = (v.id && esUUID(v.id)) ? v.id : generarUUIDSeguro();
+        v.id = idValido;
+        return {
+          id: idValido,
+          fecha: v.fecha || new Date().toISOString().slice(0, 10),
+          producto_id: (v.productoId && esUUID(v.productoId)) ? v.productoId : null,
+          producto_nombre: v.productoNombre || 'Producto',
+          categoria: v.categoria || 'Encargos',
+          cantidad: Number(v.cantidad) || 1,
+          precio_unitario: Number(v.precioUnitario) || 0,
+          total: Number(v.total) || 0,
+          medio_pago: v.medioPago || 'Transferencia',
+          observaciones: v.observaciones || '',
+          pedido_id: (v.pedidoId && esUUID(v.pedidoId)) ? v.pedidoId : null,
+          pedido_codigo: v.pedidoCodigo || ''
+        };
+      });
+      const { error } = await client.from('ventas').upsert(payload, { onConflict: 'id' });
       if (error) {
         console.error('Error guardando ventas en Supabase:', error);
       } else {
@@ -1189,6 +1304,21 @@ const SupabaseBridge = (() => {
       }
     } catch(e) {
       console.warn('Aviso: no se pudo sincronizar ventas en Supabase:', e);
+    }
+  }
+
+  async function eliminarVentaNube(ventaId){
+    if (!client || !ventaId) return false;
+    try {
+      const { error } = await client.from('ventas').delete().eq('id', ventaId);
+      if (error) {
+        console.warn('Aviso eliminando venta en Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch(e) {
+      console.warn('Error eliminando venta en Supabase:', e);
+      return false;
     }
   }
 
@@ -1253,9 +1383,11 @@ const SupabaseBridge = (() => {
     eliminarPedidoNube,
     eliminarPedido: eliminarPedidoNube,
     guardarVentasNube,
+    eliminarVentaNube,
     eliminarVentasPedidoNube,
     limpiarPedidosYVentasNube,
     sincronizarPedidos,
+    sincronizarVentas,
     reproducirCampana,
     get isConnected(){ return isConnected; },
     get client(){ return client; }
