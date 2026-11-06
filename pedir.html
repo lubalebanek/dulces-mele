@@ -293,8 +293,8 @@
 
 <!-- Scripts de almacenamiento y nube -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/storage.js?v=18"></script>
-<script src="js/supabase-client.js?v=18"></script>
+<script src="js/storage.js?v=19"></script>
+<script src="js/supabase-client.js?v=19"></script>
 
 <script>
   /* Lógica de la Tienda Pública */
@@ -338,7 +338,8 @@
 
             const prodsNube = await SupabaseBridge.fetchProductos();
             if (prodsNube && prodsNube.length > 0){
-              Storage.save('productos', prodsNube.map(p => ({
+              const validos = prodsNube.filter(p => !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco'));
+              Storage.save('productos', validos.map(p => ({
                 id: p.id,
                 nombre: p.nombre,
                 categoria: p.categoria,
