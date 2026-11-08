@@ -152,19 +152,39 @@ const Storage = (() => {
       }
     }
 
-    // 3. Insumos demo (ej: "Harina (ejemplo)")
+    // 3. Insumos demo o de ejemplo del catálogo base
     const insumosActuales = get('insumos');
     if (Array.isArray(insumosActuales)) {
-      const insumosLimpios = insumosActuales.filter(i => !i.demo && i.nombre !== 'Harina (ejemplo)');
+      const demoInsumoNombres = [
+        'harina sin polvos', 'azúcar granulada', 'azucar granulada', 'mantequilla sin sal',
+        'huevos de campo', 'manjar repostero casero', 'crema para batir 35%',
+        'leche condensada (tarro 395g)', 'leche evaporada (tarro 400g)', 'leche entera',
+        'nueces mariposa seleccionadas', 'maicena / almidón de maíz', 'maicena / almidon de maiz',
+        'cacao amargo 100%', 'mantequilla de maní natural', 'mantequilla de mani natural',
+        'chocolate cobertura blanco', 'polvos de hornear', 'esencia de vainilla pura',
+        'caja para torta grande + blonda', 'bolsitas celofán + sticker para galletas',
+        'bolsitas celofan + sticker para galletas', 'harina (ejemplo)'
+      ];
+      const insumosLimpios = insumosActuales.filter(i => 
+        !i.demo && !demoInsumoNombres.includes((i.nombre || '').toLowerCase().trim())
+      );
       if (insumosLimpios.length !== insumosActuales.length) {
         save('insumos', insumosLimpios);
       }
     }
 
-    // 4. Productos obsoletos o no deseados
+    // 4. Productos obsoletos o de ejemplo (tortas base de ejemplo)
     const prodsActuales = get('productos');
     if (Array.isArray(prodsActuales)) {
-      const prodsLimpios = prodsActuales.filter(p => !p.demo && !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco'));
+      const demoProdNombres = [
+        'torta nogada', 'torta tres leches', 'torta tiramisú', 'torta tiramisu',
+        'torta amor', 'torta bariloche', 'torta trasnochada', 'torta manjar nuez'
+      ];
+      const prodsLimpios = prodsActuales.filter(p => 
+        !p.demo && 
+        !demoProdNombres.includes((p.nombre || '').toLowerCase().trim()) &&
+        !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco')
+      );
       if (prodsLimpios.length !== prodsActuales.length) {
         save('productos', prodsLimpios);
       }

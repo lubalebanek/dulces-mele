@@ -270,23 +270,6 @@ const SupabaseBridge = (() => {
       const insumosLocal = Storage.get('insumos') || [];
 
       if (insumosNube && insumosNube.length > 0) {
-        const nubeIds = new Set(insumosNube.map(i => i.id));
-        const nubeNombres = new Set(insumosNube.map(i => (i.nombre || '').trim().toLowerCase()));
-
-        // Subir insumos locales que aún no existan en la nube
-        const faltantesEnNube = insumosLocal.filter(loc => 
-          !nubeIds.has(loc.id) && !nubeNombres.has((loc.nombre || '').trim().toLowerCase()) && !loc.demo
-        );
-
-        if (faltantesEnNube.length > 0) {
-          console.log(`⬆️ Subiendo ${faltantesEnNube.length} insumos locales a Supabase...`);
-          for (const ins of faltantesEnNube) {
-            await guardarInsumoNube(ins);
-          }
-          const { data: refreshed } = await client.from('insumos').select('*').order('nombre', { ascending: true });
-          if (refreshed) insumosNube = refreshed;
-        }
-
         const sincronizados = insumosNube.map(r => ({
           id: r.id,
           nombre: r.nombre || '',
@@ -306,12 +289,14 @@ const SupabaseBridge = (() => {
         console.log(`✓ ${sincronizados.length} insumos sincronizados desde Supabase`);
         return sincronizados.length;
       } else if (insumosLocal.length > 0) {
-        console.log(`⬆️ Subiendo ${insumosLocal.length} insumos de este navegador a Supabase...`);
-        for (const ins of insumosLocal) {
+        console.log(`⬆️ Subiendo insumos válidos a Supabase...`);
+        const validos = insumosLocal.filter(i => !i.demo);
+        for (const ins of validos) {
           await guardarInsumoNube(ins);
         }
+        Storage.save('insumos', validos);
         localStorage.setItem('gp_pasteleriaSeedApplied', '1');
-        return insumosLocal.length;
+        return validos.length;
       }
       return 0;
     } catch(e) {
@@ -384,18 +369,6 @@ const SupabaseBridge = (() => {
       const recetasLocal = Storage.get('recetas') || [];
 
       if (recetasNube && recetasNube.length > 0) {
-        const nubeProdIds = new Set(recetasNube.map(r => r.producto_id));
-
-        const faltantesEnNube = recetasLocal.filter(loc => loc.productoId && !nubeProdIds.has(loc.productoId));
-        if (faltantesEnNube.length > 0) {
-          console.log(`⬆️ Subiendo ${faltantesEnNube.length} recetas locales a Supabase...`);
-          for (const r of faltantesEnNube) {
-            await guardarRecetaNube(r);
-          }
-          const { data: refreshed } = await client.from('recetas').select('*');
-          if (refreshed) recetasNube = refreshed;
-        }
-
         const sincronizadas = recetasNube.map(r => ({
           id: r.id,
           productoId: r.producto_id,
