@@ -22,9 +22,6 @@ const Productos = (() => {
         </div>
         <div class="header-actions">
           <button class="btn btn-secondary" id="btn-sync-productos" title="Sincronizar productos y recetas con Supabase">☁️ Sincronizar Nube</button>
-          <button class="btn btn-secondary" id="btn-seed-pasteleria" title="Cargar insumos y recetas sugeridas de pastelería">
-            ✨ Cargar Recetas Base
-          </button>
           <button class="btn btn-primary" id="btn-nuevo-producto">
             ${App.svgIcon('plus')} Nuevo producto
           </button>
@@ -46,19 +43,6 @@ const Productos = (() => {
         await SupabaseBridge.sincronizarTodo(true);
         render(container);
       }
-    });
-    document.getElementById('btn-seed-pasteleria').addEventListener('click', () => {
-      App.confirmAction({
-        title: 'Cargar recetas e insumos base',
-        message: '¿Deseas cargar la lista de insumos de pastelería (mantequilla, manjar, harinas, huevos, cajas) y las recetas de ejemplo (Torta tres leches y Alfajores)? No se borrarán tus productos actuales.',
-        confirmLabel: 'Cargar recetas',
-        danger: false,
-        onConfirm: () => {
-          Storage.seedPasteleriaSiCorresponde(true);
-          App.toast('Insumos y recetas base cargadas con éxito');
-          render(container);
-        }
-      });
     });
 
     document.getElementById('tab-cat-prod').addEventListener('click', () => {

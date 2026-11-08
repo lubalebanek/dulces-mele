@@ -237,41 +237,12 @@ const SupabaseBridge = (() => {
           };
         });
 
-        // Subir productos locales pendientes que no estén en la nube
-        const pendientesDeSubir = productosLocal.filter(p => 
-          !nubeIds.has(p.id) && 
-          !nubeNombres.has((p.nombre || '').trim().toLowerCase()) && 
-          !p.demo &&
-          !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco')
-        );
-
-        for (const p of pendientesDeSubir) {
-          try {
-            const subido = await guardarProducto(p);
-            if (subido && subido.id) {
-              p.id = subido.id;
-              productosSincronizados.push(p);
-            }
-          } catch(e) {}
-        }
-
-        if (idMap.size > 0) {
-          recetasLocal.forEach(r => {
-            if (idMap.has(r.productoId)) {
-              r.productoId = idMap.get(r.productoId);
-              recetasCambiaron = true;
-            }
-          });
-          if (recetasCambiaron) {
-            Storage.save('recetas', recetasLocal);
-          }
-        }
-
+        // Catálogo maestro sincronizado desde Supabase
         Storage.save('productos', productosSincronizados);
         return productosSincronizados.length;
       } else if (productosLocal.length > 0) {
         console.log('⬆️ Subiendo catálogo local de productos a Supabase...');
-        const validosLocal = productosLocal.filter(p => !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco'));
+        const validosLocal = productosLocal.filter(p => !p.demo && !(p.nombre || '').toLowerCase().includes('frambuesa chocolate blanco'));
         for (const p of validosLocal) {
           try {
             await guardarProducto(p);
@@ -666,11 +637,8 @@ const SupabaseBridge = (() => {
       }
 
       console.log("📦 Pedidos encontrados en la nube:", pedidosNube?.length || 0);
-      
-      const pedidosLocal = Storage.get('pedidos') || [];
-      let huboCambios = false;
 
-      (pedidosNube || []).forEach(pNube => {
+      const pedidosSincronizados = (pedidosNube || []).map(pNube => {
         const rawItems = (itemsNube || []).filter(i => i.pedido_id === pNube.id);
         const seenItemKeys = new Set();
         const itemsDelPedido = [];
@@ -699,76 +667,37 @@ const SupabaseBridge = (() => {
           repararItemsDuplicadosEnNube(pNube.id, itemsDelPedido);
         }
 
-        const idx = pedidosLocal.findIndex(p => p.id === pNube.id || (p.codigo && pNube.codigo && p.codigo === pNube.codigo));
-
-        if (idx === -1) {
-          pedidosLocal.push({
-            id: pNube.id,
-            codigo: pNube.codigo || 'Sin Código',
-            clienteNombre: pNube.cliente_nombre || 'Cliente web',
-            clienteTelefono: pNube.cliente_telefono || '',
-            clienteEmail: pNube.cliente_email || '',
-            tipoEntrega: pNube.tipo_entrega || 'retiro',
-            direccionDespacho: pNube.direccion_despacho || '',
-            fechaEntrega: pNube.fecha_entrega || '',
-            horaEntrega: pNube.hora_entrega || '',
-            notas: pNube.notas || '',
-            total: Number(pNube.total) || 0,
-            abono: Number(pNube.abono) || 0,
-            saldoPendiente: Number(pNube.saldo_pendiente) || 0,
-            medioPago: pNube.medio_pago || 'Transferencia',
-            estado: pNube.estado || 'pendiente',
-            origen: pNube.origen || 'web_cliente',
-            items: itemsDelPedido,
-            creadoEn: pNube.created_at ? new Date(pNube.created_at).getTime() : Date.now()
-          });
-          huboCambios = true;
-        } else {
-          // Ya existe en local: sincronizar los datos de la nube
-          const p = pedidosLocal[idx];
-          const itemsCambiaron = Array.isArray(p.items) && p.items.length !== itemsDelPedido.length;
-          if (
-            p.estado !== pNube.estado ||
-            Number(p.abono) !== Number(pNube.abono) ||
-            Number(p.saldoPendiente) !== Number(pNube.saldo_pendiente) ||
-            p.clienteNombre !== pNube.cliente_nombre ||
-            p.fechaEntrega !== pNube.fecha_entrega ||
-            p.horaEntrega !== (pNube.hora_entrega || '') ||
-            p.medioPago !== pNube.medio_pago ||
-            Number(p.total) !== Number(pNube.total) ||
-            p.tipoEntrega !== pNube.tipo_entrega ||
-            p.direccionDespacho !== (pNube.direccion_despacho || '') ||
-            p.notas !== (pNube.notas || '') ||
-            itemsCambiaron
-          ) {
-            p.id = pNube.id; // asegurar UUID de la nube
-            p.estado = pNube.estado;
-            p.abono = Number(pNube.abono) || 0;
-            p.saldoPendiente = Number(pNube.saldo_pendiente) || 0;
-            p.clienteNombre = pNube.cliente_nombre || p.clienteNombre;
-            p.clienteTelefono = pNube.cliente_telefono || p.clienteTelefono;
-            p.clienteEmail = pNube.cliente_email || p.clienteEmail;
-            p.tipoEntrega = pNube.tipo_entrega || p.tipoEntrega;
-            p.direccionDespacho = pNube.direccion_despacho || p.direccionDespacho;
-            p.fechaEntrega = pNube.fecha_entrega || p.fechaEntrega;
-            p.horaEntrega = pNube.hora_entrega || p.horaEntrega;
-            p.notas = pNube.notas || p.notas;
-            p.total = Number(pNube.total) || p.total;
-            p.medioPago = pNube.medio_pago || p.medioPago;
-            if (itemsDelPedido.length > 0) p.items = itemsDelPedido;
-            huboCambios = true;
-          }
-        }
+        return {
+          id: pNube.id,
+          codigo: pNube.codigo || 'Sin Código',
+          clienteNombre: pNube.cliente_nombre || 'Cliente web',
+          clienteTelefono: pNube.cliente_telefono || '',
+          clienteEmail: pNube.cliente_email || '',
+          tipoEntrega: pNube.tipo_entrega || 'retiro',
+          direccionDespacho: pNube.direccion_despacho || '',
+          fechaEntrega: pNube.fecha_entrega || '',
+          horaEntrega: pNube.hora_entrega || '',
+          notas: pNube.notas || '',
+          total: Number(pNube.total) || 0,
+          abono: Number(pNube.abono) || 0,
+          saldoPendiente: Number(pNube.saldo_pendiente) || 0,
+          medioPago: pNube.medio_pago || 'Transferencia',
+          estado: pNube.estado || 'pendiente',
+          origen: pNube.origen || 'web_cliente',
+          items: itemsDelPedido,
+          creadoEn: pNube.created_at ? new Date(pNube.created_at).getTime() : Date.now()
+        };
       });
 
-      if (huboCambios) {
-        console.log("✅ Sincronización completada. Actualizando almacenamiento local...");
-        Storage.save('pedidos', pedidosLocal);
-        
-        // Refrescar vista actual
-        if (window.App && typeof App.goTo === 'function') {
-          App.goTo(App.currentSection || 'pedidos');
-        }
+      // Filtrar de manera estricta cualquier pedido demo de ejemplo (ej: Camila Rojas DM-101)
+      const limpios = pedidosSincronizados.filter(p => !p.demo && p.clienteNombre !== 'Camila Rojas' && p.codigo !== 'DM-101');
+
+      Storage.save('pedidos', limpios);
+      console.log(`✅ Sincronización completada. ${limpios.length} pedidos reales guardados localmente.`);
+      
+      // Refrescar vista actual si el usuario está en pedidos o dashboard
+      if (window.App && typeof App.goTo === 'function' && (App.currentSection === 'pedidos' || App.currentSection === 'dashboard')) {
+        App.goTo(App.currentSection);
       }
     } catch(e) {
       console.error('❌ Error sincronizando pedidos:', e);
@@ -838,8 +767,8 @@ const SupabaseBridge = (() => {
       if (ventasNube && ventasNube.length > 0) {
         const nubeIds = new Set(ventasNube.map(v => v.id));
 
-        // Subir ventas locales que no existan aún en la nube
-        const faltantes = ventasLocal.filter(loc => !nubeIds.has(loc.id) && !loc.demo);
+        // Subir ventas locales legítimas pendientes que no existan aún en la nube
+        const faltantes = ventasLocal.filter(loc => !nubeIds.has(loc.id) && !loc.demo && !(loc.observaciones || '').includes('Venta de ejemplo') && !(loc.observaciones || '').includes('Camila Rojas'));
         if (faltantes.length > 0) {
           console.log(`⬆️ Subiendo ${faltantes.length} ventas locales a Supabase...`);
           await guardarVentasNube(faltantes);
@@ -864,14 +793,19 @@ const SupabaseBridge = (() => {
           creadoEn: v.creado_en ? new Date(v.creado_en).getTime() : Date.now()
         }));
 
-        Storage.save('ventas', sincronizadas);
-        return sincronizadas.length;
+        const limpios = sincronizadas.filter(v => !v.demo && !(v.observaciones || '').includes('Venta de ejemplo') && !(v.observaciones || '').includes('Camila Rojas'));
+        Storage.save('ventas', limpios);
+        return limpios.length;
       } else if (ventasLocal.length > 0) {
-        const paraSubir = ventasLocal.filter(v => !v.demo);
+        const paraSubir = ventasLocal.filter(v => !v.demo && !(v.observaciones || '').includes('Venta de ejemplo') && !(v.observaciones || '').includes('Camila Rojas'));
         if (paraSubir.length > 0) {
           await guardarVentasNube(paraSubir);
+        } else {
+          Storage.save('ventas', []);
         }
-        return ventasLocal.length;
+        return paraSubir.length;
+      } else {
+        Storage.save('ventas', []);
       }
       return 0;
     } catch(e) {
@@ -923,11 +857,13 @@ const SupabaseBridge = (() => {
     try {
       client
         .channel('pedidos-live')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pedidos' }, payload => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, payload => {
           sincronizarPedidos();
-          reproducirCampana();
-          if (window.App && typeof App.toast === 'function'){
-            App.toast(`🧁 ¡Nuevo pedido recibido #${payload.new.codigo || ''} de ${payload.new.cliente_nombre}!`, 'success');
+          if (payload.eventType === 'INSERT' && payload.new) {
+            reproducirCampana();
+            if (window.App && typeof App.toast === 'function'){
+              App.toast(`🧁 ¡Nuevo pedido recibido #${payload.new.codigo || ''} de ${payload.new.cliente_nombre}!`, 'success');
+            }
           }
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, () => {

@@ -82,17 +82,11 @@ const Inventario = (() => {
               <p class="text-soft">El inventario está limpio. Ya puedes cargar tus materias primas e ingredientes reales.</p>
               <div style="display:flex; gap:10px; justify-content:center; margin-top:16px; flex-wrap:wrap;">
                 <button class="btn btn-primary" id="btn-empty-nuevo">${App.svgIcon('plus')} Agregar mi primer insumo</button>
-                <button class="btn btn-secondary" id="btn-empty-sugeridos">Cargar catálogo de ejemplo</button>
               </div>
             </div>
           </div>
         `;
         content.querySelector('#btn-empty-nuevo')?.addEventListener('click', () => openInsumoForm());
-        content.querySelector('#btn-empty-sugeridos')?.addEventListener('click', () => {
-          Storage.seedPasteleriaSiCorresponde(true);
-          App.toast('Catálogo sugerido cargado');
-          render(container);
-        });
         return;
       }
       content.innerHTML = `
