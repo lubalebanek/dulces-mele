@@ -62,6 +62,40 @@ const Dashboard = (() => {
 
     const insumosBajos = insumos.filter(i => (Number(i.stockActual) || 0) <= (Number(i.stockMinimo) || 0));
 
+    // Valorización del stock de productos terminados (Vitrina)
+    const productosTerminados = productos.filter(p => p.tipoStock === 'terminado' && p.estado !== 'inactivo');
+    const desgloseStockTerminado = productosTerminados
+      .map(p => {
+        const stock = Math.max(0, Number(p.stockActual) || 0);
+        const precioVenta = Math.max(0, Number(p.precioVenta) || 0);
+        const valorVenta = stock * precioVenta;
+        const costeo = (typeof Storage.calcularCostoReceta === 'function') ? Storage.calcularCostoReceta(p.id) : null;
+        const tieneReceta = !!(costeo && costeo.tieneReceta && costeo.costoTotalPorUnidad > 0);
+        const costoUnitario = tieneReceta ? costeo.costoTotalPorUnidad : 0;
+        const costoTotal = stock * costoUnitario;
+        return {
+          id: p.id,
+          nombre: p.nombre,
+          categoria: p.categoria || 'Sin categoría',
+          unidadVenta: p.unidadVenta || 'unidad',
+          stock,
+          precioVenta,
+          valorVenta,
+          tieneReceta,
+          costoUnitario,
+          costoTotal
+        };
+      })
+      .filter(item => item.stock > 0)
+      .sort((a, b) => b.valorVenta - a.valorVenta);
+
+    const valorStockTerminado = desgloseStockTerminado.reduce((sum, item) => sum + item.valorVenta, 0);
+    const unidadesStockTerminado = desgloseStockTerminado.reduce((sum, item) => sum + item.stock, 0);
+    const costoStockTerminado = desgloseStockTerminado.reduce((sum, item) => sum + item.costoTotal, 0);
+    const unidadesConRecetaCosteada = desgloseStockTerminado
+      .filter(item => item.tieneReceta)
+      .reduce((sum, item) => sum + item.stock, 0);
+
     container.innerHTML = `
       <div class="page-header">
         <div>
@@ -97,6 +131,14 @@ const Dashboard = (() => {
           <div class="kpi-label">Saldos por cobrar</div>
           <div class="kpi-value" style="color: var(--danger);">${App.formatCLP(saldosPendientesTotal)}</div>
           <div class="kpi-hint">De clientes con pedidos reservados</div>
+        </div>
+        <div class="kpi-card" id="kpi-stock-terminado" role="button" tabindex="0" style="border-left: 4px solid var(--sage); cursor: pointer;" title="Haz clic para ver el desglose del stock producido">
+          <div class="kpi-label" style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+            <span>Stock producido (Terminados)</span>
+            <span style="font-size:11px; color:var(--sage); font-weight:700;">Ver detalle →</span>
+          </div>
+          <div class="kpi-value positive">${App.formatCLP(valorStockTerminado)}</div>
+          <div class="kpi-hint">🍪 ${unidadesStockTerminado} unid. en ${desgloseStockTerminado.length} producto(s)</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Ventas del mes</div>
@@ -286,6 +328,24 @@ const Dashboard = (() => {
       }, 50);
     });
 
+    const kpiStockCard = document.getElementById('kpi-stock-terminado');
+    if (kpiStockCard) {
+      const abrirDetalleStock = () => openStockTerminadoModal({
+        desglose: desgloseStockTerminado,
+        valorTotal: valorStockTerminado,
+        unidadesTotal: unidadesStockTerminado,
+        costoTotal: costoStockTerminado,
+        unidadesConCosto: unidadesConRecetaCosteada
+      });
+      kpiStockCard.addEventListener('click', abrirDetalleStock);
+      kpiStockCard.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          abrirDetalleStock();
+        }
+      });
+    }
+
     // Cambiar estado desde la agenda de entregas
     container.querySelectorAll('[data-cambiar-estado]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -373,6 +433,118 @@ const Dashboard = (() => {
         </div>
       `;
     }
+  }
+
+  function openStockTerminadoModal({ desglose, valorTotal, unidadesTotal, costoTotal, unidadesConCosto }){
+    const gananciaPotencialConReceta = desglose
+      .filter(i => i.tieneReceta)
+      .reduce((sum, i) => sum + (i.valorVenta - i.costoTotal), 0);
+
+    const overlay = App.openModal(`
+      <div class="modal-header">
+        <div>
+          <h3 style="margin:0;">💰 Valorización de Stock Producido</h3>
+          <div class="text-soft" style="font-size:13px;">Dinero disponible en productos terminados listos para la venta</div>
+        </div>
+        <button class="modal-close" data-close>${App.svgIcon('close')}</button>
+      </div>
+
+      <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 16px;">
+        <div class="kpi-card" style="background:var(--surface-2); border-left:4px solid var(--sage); padding:14px;">
+          <div class="kpi-label">Total a Precio Venta</div>
+          <div class="kpi-value positive" style="font-size:1.45rem;">${App.formatCLP(valorTotal)}</div>
+          <div class="kpi-hint">Si se vende todo el stock actual</div>
+        </div>
+        <div class="kpi-card" style="background:var(--surface-2); padding:14px;">
+          <div class="kpi-label">Unidades Producidas</div>
+          <div class="kpi-value" style="font-size:1.45rem;">${unidadesTotal}</div>
+          <div class="kpi-hint">En ${desglose.length} producto(s) con stock</div>
+        </div>
+        <div class="kpi-card" style="background:var(--surface-2); padding:14px;">
+          <div class="kpi-label">Costo Insumos (c/ Receta)</div>
+          <div class="kpi-value" style="font-size:1.35rem; color:var(--accent-dark);">
+            ${unidadesConCosto > 0 ? App.formatCLP(costoTotal) : '—'}
+          </div>
+          <div class="kpi-hint">
+            ${unidadesConCosto > 0
+              ? `Ganancia est.: ${App.formatCLP(gananciaPotencialConReceta)} (${unidadesConRecetaTexto(unidadesConCosto, unidadesTotal)})`
+              : 'Agrega recetas en Productos para ver el costo'}
+          </div>
+        </div>
+      </div>
+
+      ${desglose.length === 0 ? `
+        <div class="empty-state" style="padding:32px 16px; background:var(--surface-2); border-radius:var(--radius-sm);">
+          <div style="font-size:32px; margin-bottom:8px;">🧁</div>
+          <h4 style="margin:0 0 6px 0;">No tienes productos terminados con stock</h4>
+          <p class="text-soft" style="margin:0; font-size:13px;">Cuando hornees una tanda o actualices el stock de vitrina, verás aquí su valor total en dinero.</p>
+        </div>
+      ` : `
+        <div class="table-wrap" style="max-height: 360px; overflow-y: auto;">
+          <table style="min-width: 520px;">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Stock</th>
+                <th>Precio Unit.</th>
+                <th>Total en Plata</th>
+                <th>Costo Unit.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${desglose.map(item => `
+                <tr>
+                  <td>
+                    <strong>${escapeHtml(item.nombre)}</strong>
+                    <div class="text-soft" style="font-size:11px;">${escapeHtml(item.categoria)}</div>
+                  </td>
+                  <td>
+                    <span class="badge badge-sage">${item.stock} ${escapeHtml(formatUnidadStock(item.stock, item.unidadVenta))}</span>
+                  </td>
+                  <td>${App.formatCLP(item.precioVenta)}</td>
+                  <td><strong style="color:var(--sage);">${App.formatCLP(item.valorVenta)}</strong></td>
+                  <td>${item.tieneReceta ? App.formatCLP(item.costoUnitario) : '<span class="text-soft">—</span>'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr style="background:var(--surface-2); font-weight:700;">
+                <td style="padding:12px 14px;">TOTAL VITRINA</td>
+                <td style="padding:12px 14px;">${unidadesTotal} unid.</td>
+                <td style="padding:12px 14px;">—</td>
+                <td style="padding:12px 14px; color:var(--sage); font-size:1rem;">${App.formatCLP(valorTotal)}</td>
+                <td style="padding:12px 14px;">${unidadesConCosto > 0 ? App.formatCLP(costoTotal) : '—'}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      `}
+
+      <div class="modal-footer" style="margin-top:16px;">
+        <button type="button" class="btn btn-secondary" id="btn-modal-ir-productos">🍪 Ir a Productos y Hornadas</button>
+        <button type="button" class="btn btn-primary" data-close>Cerrar</button>
+      </div>
+    `, { large: true });
+
+    overlay.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => App.closeModal()));
+    overlay.querySelector('#btn-modal-ir-productos')?.addEventListener('click', () => {
+      App.closeModal(true);
+      App.goTo('productos');
+    });
+  }
+
+  function unidadesConRecetaTexto(conCosto, total){
+    if (conCosto >= total) return '100% costeado';
+    return `${conCosto} de ${total} unid.`;
+  }
+
+  function formatUnidadStock(cantidad, unidad){
+    const u = unidad || 'unidad';
+    if (cantidad === 1) return u;
+    if (u === 'unidad') return 'unidades';
+    if (u === 'porción') return 'porciones';
+    if (u === 'kg') return 'kg';
+    return `${u}s`;
   }
 
   function escapeHtml(str){

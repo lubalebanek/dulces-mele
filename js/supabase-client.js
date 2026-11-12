@@ -91,6 +91,9 @@ const SupabaseBridge = (() => {
       if (mostrarToast && window.App && typeof App.toast === 'function'){
         App.toast('☁️ Sincronización con la nube completada.');
       }
+      if (window.App && typeof App.goTo === 'function' && App.currentSection && !document.getElementById('active-modal-overlay')){
+        App.goTo(App.currentSection);
+      }
       return { config: rCfg, productos: rProd, insumos: rIns, recetas: rRec, gastos: rGas, movimientos: rMov, pedidos: rPed, ventas: rVen };
     } catch(err) {
       console.error('Error durante sincronización integral:', err);
@@ -839,8 +842,17 @@ const SupabaseBridge = (() => {
             }
           }
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, () => {
-          sincronizarVentas();
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' }, async () => {
+          await sincronizarVentas();
+          if (window.App && typeof App.goTo === 'function' && (App.currentSection === 'dashboard' || App.currentSection === 'ventas') && !document.getElementById('active-modal-overlay')){
+            App.goTo(App.currentSection);
+          }
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'productos' }, async () => {
+          await sincronizarProductos();
+          if (window.App && typeof App.goTo === 'function' && (App.currentSection === 'dashboard' || App.currentSection === 'productos') && !document.getElementById('active-modal-overlay')){
+            App.goTo(App.currentSection);
+          }
         })
         .subscribe();
     } catch(e) {
