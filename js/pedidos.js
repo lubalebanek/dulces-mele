@@ -180,20 +180,26 @@ const Pedidos = (() => {
       }
 
       listEl.innerHTML = `
-        <div class="table-wrap">
-          <table>
+        <div class="pedidos-mobile-selectbar">
+          <label>
+            <input type="checkbox" id="check-todos-pedidos-mobile" style="cursor:pointer;" />
+            <span>Seleccionar todos (${lista.length})</span>
+          </label>
+          <span class="text-soft" style="font-size:12px;">Para imprimir tickets</span>
+        </div>
+        <div class="table-wrap table-wrap-pedidos">
+          <table class="table-pedidos">
             <thead>
               <tr>
-                <th style="width: 38px; text-align: center;">
+                <th class="col-check">
                   <input type="checkbox" id="check-todos-pedidos" title="Seleccionar todos para imprimir tickets" style="cursor:pointer;" />
                 </th>
-                <th>Código / Fecha</th>
+                <th>Pedido / Entrega</th>
                 <th>Cliente y Entrega</th>
                 <th>Productos</th>
-                <th>Total</th>
-                <th>Estado de Pago / Saldo</th>
+                <th>Total y Pago</th>
                 <th>Estado</th>
-                <th style="text-align: right;">Acciones</th>
+                <th class="col-actions">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -202,86 +208,93 @@ const Pedidos = (() => {
                 const esPagado = (Number(p.saldoPendiente) <= 0) || p.pagado;
                 const tieneAbono = Number(p.abono) > 0 && !esPagado;
                 const estaEnVentas = p.registradoEnVentas || ventasRegistradas.some(v => v.pedidoId === p.id || (v.pedidoCodigo && p.codigo && v.pedidoCodigo === p.codigo));
-                const itemsTexto = (p.items || []).map(i => `${i.cantidad}x ${escapeHtml(i.nombre)}`).join(', ');
+                const itemsLista = p.items || [];
+                const itemsTitle = escapeHtml(itemsLista.map(i => `${i.cantidad}x ${i.nombre}`).join(', '));
+                const itemsHtml = itemsLista.length > 0
+                  ? itemsLista.map(i => `<div class="pedido-item-line"><span class="pedido-item-qty">${i.cantidad}×</span> ${escapeHtml(i.nombre)}</div>`).join('')
+                  : '<span class="text-soft">Sin items</span>';
                 const estadoBadge = getEstadoBadge(p.estado);
                 const estaSeleccionado = seleccionadosParaImprimir.has(p.id);
 
                 return `
-                  <tr style="${esHoy ? 'background: #FFFDF9;' : ''}">
-                    <td style="text-align: center; vertical-align: middle;">
+                  <tr class="${esHoy ? 'pedido-hoy' : ''}">
+                    <td class="col-check">
                       <input type="checkbox" class="check-pedido-item" data-id="${p.id}" ${estaSeleccionado ? 'checked' : ''} style="cursor:pointer;" title="Seleccionar para imprimir ticket" />
                     </td>
-                    <td>
-                      <div><strong>${escapeHtml(p.codigo || '—')}</strong> ${p.demo ? '<span class="tag-demo">EJEMPLO</span>' : ''}</div>
-                      <div class="text-soft" style="font-size:13px; font-weight: 600; color: ${esHoy ? 'var(--amber)' : 'inherit'};">
-                        ${esHoy ? '¡HOY! ' : ''}${App.formatDate(p.fechaEntrega)} ${p.horaEntrega ? `(${escapeHtml(p.horaEntrega)})` : ''}
+                    <td class="col-codigo">
+                      <div class="pedido-code-row">
+                        <strong>${escapeHtml(p.codigo || '—')}</strong>
+                        ${p.demo ? '<span class="tag-demo">EJEMPLO</span>' : ''}
+                        <span class="pedido-origin">${p.origen === 'web_cliente' ? '🌐 Web' : '👤 Manual'}</span>
                       </div>
-                      <div class="text-soft" style="font-size:11px;">Origen: ${p.origen === 'web_cliente' ? '🌐 Web Cliente' : '👤 Manual'}</div>
+                      <div class="pedido-fecha ${esHoy ? 'is-today' : ''}">
+                        ${esHoy ? '¡HOY! ' : ''}${App.formatDate(p.fechaEntrega)}
+                      </div>
+                      ${p.horaEntrega ? `<div class="pedido-hora">🕒 ${escapeHtml(p.horaEntrega)}</div>` : ''}
                     </td>
-                    <td>
-                      <div><strong>${escapeHtml(p.clienteNombre)}</strong></div>
-                      <div class="text-soft" style="font-size:12px;">📞 ${escapeHtml(p.clienteTelefono)}</div>
-                      <div style="font-size:12px; margin-top:2px;">
+                    <td class="col-cliente">
+                      <div class="pedido-cliente-nombre">${escapeHtml(p.clienteNombre)}</div>
+                      <div class="pedido-phone">📞 ${escapeHtml(p.clienteTelefono)}</div>
+                      <div class="pedido-entrega-meta">
                         <span class="badge ${p.tipoEntrega === 'despacho' ? 'badge-berry' : 'badge-neutral'}" style="font-size:11px;">
                           ${p.tipoEntrega === 'despacho' ? '🚚 Despacho' : '🏪 Retiro en local'}
                         </span>
-                        ${p.direccionDespacho ? `<div class="text-soft" style="font-size:11px;">${escapeHtml(p.direccionDespacho)}</div>` : ''}
+                        ${p.direccionDespacho ? `<div class="pedido-dir">${escapeHtml(p.direccionDespacho)}</div>` : ''}
                       </div>
                     </td>
-                    <td>
-                      <div style="max-width: 220px; font-size:13px;" title="${escapeHtml(itemsTexto)}">
-                        ${escapeHtml(itemsTexto) || '<span class="text-soft">Sin items</span>'}
+                    <td class="col-productos">
+                      <div class="pedido-items-list" title="${itemsTitle}">
+                        ${itemsHtml}
                       </div>
-                      ${p.notas ? `<div class="text-soft" style="font-size:11px; margin-top:4px; font-style:italic;">📝 ${escapeHtml(p.notas)}</div>` : ''}
+                      ${p.notas ? `<div class="pedido-nota">📝 ${escapeHtml(p.notas)}</div>` : ''}
                     </td>
-                    <td>
-                      <div><strong style="font-size: 15px;">${App.formatCLP(p.total)}</strong></div>
-                      ${tieneAbono ? `<div class="text-soft" style="font-size:11px;">Abono: ${App.formatCLP(p.abono)}</div>` : ''}
-                    </td>
-                    <td>
+                    <td class="col-pago">
+                      <div class="pedido-total">${App.formatCLP(p.total)}</div>
                       ${esPagado ? `
                         <div>
-                          <span class="badge badge-sage" style="font-weight: 700; font-size: 12px;">🟢 Pagado</span>
-                          <div style="font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                          <span class="badge badge-sage" style="font-size: 11px;">🟢 Pagado</span>
+                          <div class="pedido-pago-sub">
                             <span class="badge badge-neutral" style="font-size: 10px;">${estaEnVentas ? '✓ En Ventas' : 'Sin venta'}</span>
-                            <button class="btn btn-ghost btn-sm" data-pago-toggle="${p.id}" data-action="por_pagar" style="font-size: 10px; padding: 2px 6px;" title="Marcar como por pagar">↩ Por pagar</button>
+                            <button class="btn btn-ghost btn-xs" data-pago-toggle="${p.id}" data-action="por_pagar" style="font-size: 10px; padding: 2px 6px;" title="Marcar como por pagar">↩ Por pagar</button>
                           </div>
                         </div>
                       ` : tieneAbono ? `
                         <div>
-                          <span class="badge badge-amber" style="font-weight: 700; font-size: 12px;">🟡 Abono: ${App.formatCLP(p.abono)}</span>
-                          <div style="color: var(--danger); font-size: 12px; font-weight: 600; margin-top: 2px;">Saldo: ${App.formatCLP(p.saldoPendiente)}</div>
+                          <span class="badge badge-amber" style="font-size: 11px;">🟡 Abono: ${App.formatCLP(p.abono)}</span>
+                          <div class="pedido-saldo">Saldo: ${App.formatCLP(p.saldoPendiente)}</div>
                           <div style="margin-top: 4px;">
-                            <button class="btn btn-primary btn-sm" data-pago-toggle="${p.id}" data-action="completar_pago" style="font-size: 11px; padding: 3px 8px; background: #2D6A4F; border-color: #2D6A4F;">
+                            <button class="btn btn-primary btn-xs" data-pago-toggle="${p.id}" data-action="completar_pago" style="background: #2D6A4F; border-color: #2D6A4F;">
                               ✓ Completar Pago
                             </button>
                           </div>
                         </div>
                       ` : `
                         <div>
-                          <span class="badge badge-danger" style="font-weight: 700; font-size: 12px;">🔴 Por pagar</span>
-                          <div style="margin-top: 5px;">
-                            <button class="btn btn-primary btn-sm" data-pago-toggle="${p.id}" data-action="marcar_pagado" style="font-size: 11px; padding: 4px 10px; background: #2D6A4F; border-color: #2D6A4F; font-weight: 600;">
+                          <span class="badge badge-danger" style="font-size: 11px;">🔴 Por pagar</span>
+                          <div style="margin-top: 4px;">
+                            <button class="btn btn-primary btn-xs" data-pago-toggle="${p.id}" data-action="marcar_pagado" style="background: #2D6A4F; border-color: #2D6A4F;">
                               ✓ Marcar Pagado
                             </button>
                           </div>
                         </div>
                       `}
-                      <div class="text-soft" style="font-size: 11px; margin-top: 4px;">${p.medioPago === 'Efectivo' ? '💵 Efectivo' : '💳 Transferencia'}</div>
+                      <div class="pedido-medio">${p.medioPago === 'Efectivo' ? '💵 Efectivo' : '💳 Transferencia'}</div>
                     </td>
-                    <td>
+                    <td class="col-estado">
                       <span class="badge ${estadoBadge.color}">${estadoBadge.label}</span>
                     </td>
-                    <td class="cell-actions" style="text-align: right;">
-                      <button class="btn btn-secondary btn-sm" data-ticket="${p.id}" title="Ver e Imprimir Ticket para la caja">
-                        📄 Ticket
-                      </button>
-                      <a href="${generarLinkWhatsApp(p)}" target="_blank" class="btn btn-secondary btn-sm" title="Contactar por WhatsApp" style="background:#25D366; color:#fff; border-color:#25D366;">
-                        ${App.svgIcon('whatsapp')} WhatsApp
-                      </a>
-                      <button class="btn btn-secondary btn-sm" data-estado="${p.id}">Estado</button>
-                      <button class="btn btn-secondary btn-sm" data-edit="${p.id}">Editar</button>
-                      <button class="btn btn-danger btn-sm" data-del="${p.id}">Eliminar</button>
+                    <td class="col-actions">
+                      <div class="pedido-actions-grid">
+                        <div class="pedido-actions-row">
+                          <button class="btn btn-secondary btn-xs" data-ticket="${p.id}" title="Ver e Imprimir Ticket para la caja">📄 Ticket</button>
+                          <a href="${generarLinkWhatsApp(p)}" target="_blank" class="btn btn-whatsapp btn-xs" title="Contactar por WhatsApp">${App.svgIcon('whatsapp')} WhatsApp</a>
+                        </div>
+                        <div class="pedido-actions-row">
+                          <button class="btn btn-secondary btn-xs" data-estado="${p.id}">Estado</button>
+                          <button class="btn btn-secondary btn-xs" data-edit="${p.id}">Editar</button>
+                          <button class="btn btn-danger btn-xs" data-del="${p.id}">Eliminar</button>
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 `;
@@ -329,26 +342,36 @@ const Pedidos = (() => {
       };
 
       const checkAll = listEl.querySelector('#check-todos-pedidos');
-      if (checkAll) {
-        checkAll.addEventListener('change', () => {
-          lista.forEach(p => {
-            if (checkAll.checked) seleccionadosParaImprimir.add(p.id);
-            else seleccionadosParaImprimir.delete(p.id);
-          });
-          listEl.querySelectorAll('.check-pedido-item').forEach(cb => { cb.checked = checkAll.checked; });
-          updateBotonTickets();
+      const checkAllMobile = listEl.querySelector('#check-todos-pedidos-mobile');
+      const syncSelectAllState = () => {
+        const allChecked = lista.length > 0 && lista.every(p => seleccionadosParaImprimir.has(p.id));
+        if (checkAll) checkAll.checked = allChecked;
+        if (checkAllMobile) checkAllMobile.checked = allChecked;
+      };
+      const toggleSelectAll = (checked) => {
+        lista.forEach(p => {
+          if (checked) seleccionadosParaImprimir.add(p.id);
+          else seleccionadosParaImprimir.delete(p.id);
         });
-      }
+        listEl.querySelectorAll('.check-pedido-item').forEach(cb => { cb.checked = checked; });
+        syncSelectAllState();
+        updateBotonTickets();
+      };
+
+      if (checkAll) checkAll.addEventListener('change', () => toggleSelectAll(checkAll.checked));
+      if (checkAllMobile) checkAllMobile.addEventListener('change', () => toggleSelectAll(checkAllMobile.checked));
 
       listEl.querySelectorAll('.check-pedido-item').forEach(cb => {
         cb.addEventListener('change', () => {
           const id = cb.dataset.id;
           if (cb.checked) seleccionadosParaImprimir.add(id);
           else seleccionadosParaImprimir.delete(id);
+          syncSelectAllState();
           updateBotonTickets();
         });
       });
 
+      syncSelectAllState();
       updateBotonTickets();
     }
 
