@@ -360,7 +360,16 @@ tbody tr{
   transition: background-color 0.16s ease;
 }
 tbody tr:hover{ background: var(--surface-2); }
-.cell-actions{ display:flex; gap:6px; }
+.cell-actions{
+  white-space: nowrap;
+  text-align: right;
+}
+.cell-actions > .btn + .btn,
+.cell-actions > .btn + a,
+.cell-actions > a + .btn,
+.cell-actions > a + a{
+  margin-left: 6px;
+}
 .empty-row td{ text-align:center; color: var(--ink-soft); padding: 32px 14px; }
 
 .badge{
@@ -371,6 +380,7 @@ tbody tr:hover{ background: var(--surface-2); }
   border-radius: 100px;
   font-size: 0.74rem;
   font-weight:700;
+  white-space: nowrap;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .badge:hover{
@@ -381,6 +391,193 @@ tbody tr:hover{ background: var(--surface-2); }
 .badge-danger{ background: var(--danger-soft); color: var(--danger); }
 .badge-berry{ background: var(--berry-soft); color: var(--berry); }
 .badge-neutral{ background: var(--surface-2); color: var(--ink-soft); }
+
+/* ---------- Pedidos Table & Responsive Cards ---------- */
+.btn-xs{
+  padding: 5px 8px;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  gap: 4px;
+}
+.btn-whatsapp{
+  background: #25D366;
+  color: #fff;
+  border: 1px solid #25D366;
+  text-decoration: none;
+}
+.btn-whatsapp:hover{
+  background: #1ebe5b;
+  border-color: #1ebe5b;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(37, 211, 102, 0.28);
+}
+
+.pedidos-mobile-selectbar{
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.pedidos-mobile-selectbar label{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.table-pedidos{
+  min-width: 0;
+  width: 100%;
+}
+.table-pedidos thead th{
+  padding: 11px 10px;
+}
+.table-pedidos tbody td{
+  padding: 12px 10px;
+  vertical-align: top;
+}
+.table-pedidos th.col-check,
+.table-pedidos td.col-check{
+  width: 34px;
+  text-align: center;
+  vertical-align: middle;
+  padding-left: 8px;
+  padding-right: 6px;
+}
+.table-pedidos tbody td.col-estado,
+.table-pedidos tbody td.col-actions{
+  vertical-align: middle;
+}
+.table-pedidos th.col-actions,
+.table-pedidos td.col-actions{
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+.table-pedidos tbody tr.pedido-hoy{
+  background: #FFFDF7;
+}
+.table-pedidos tbody tr.pedido-hoy:hover{
+  background: #FAF2E6;
+}
+
+.pedido-code-row{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pedido-origin{
+  font-size: 0.71rem;
+  color: var(--ink-soft);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pedido-fecha{
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-top: 3px;
+  color: var(--ink);
+}
+.pedido-fecha.is-today{
+  color: var(--amber);
+}
+.pedido-hora{
+  font-size: 0.74rem;
+  color: var(--ink-soft);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+.pedido-cliente-nombre{
+  font-weight: 700;
+  line-height: 1.3;
+}
+.pedido-phone{
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  margin-top: 2px;
+}
+.pedido-entrega-meta{
+  margin-top: 5px;
+}
+.pedido-dir{
+  font-size: 0.73rem;
+  color: var(--ink-soft);
+  margin-top: 3px;
+  line-height: 1.3;
+}
+.pedido-items-list{
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  min-width: 150px;
+  max-width: 280px;
+}
+.pedido-item-qty{
+  font-weight: 700;
+  color: var(--accent-dark);
+}
+.pedido-nota{
+  font-size: 0.73rem;
+  color: var(--ink-soft);
+  font-style: italic;
+  margin-top: 5px;
+  line-height: 1.3;
+}
+.pedido-total{
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+.pedido-pago-sub{
+  font-size: 0.72rem;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.pedido-saldo{
+  color: var(--danger);
+  font-size: 0.76rem;
+  font-weight: 700;
+  margin-top: 3px;
+}
+.pedido-medio{
+  font-size: 0.73rem;
+  color: var(--ink-soft);
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.pedido-actions-grid{
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+}
+.pedido-actions-row{
+  display: flex;
+  gap: 5px;
+  justify-content: flex-end;
+}
+.pedido-actions-row > .btn{
+  flex: 1 1 auto;
+  justify-content: center;
+}
 
 /* ---------- Filters ---------- */
 .filters-bar{
@@ -620,6 +817,116 @@ tbody tr:hover{ background: var(--surface-2); }
 .calendar-nav h3{ min-width:170px; text-align:center; }
 
 /* ---------- Responsive ---------- */
+@media (max-width: 1320px){
+  :root{ --nav-w: 212px; }
+  .main{ padding: 22px 20px 90px 20px; }
+  .table-pedidos thead th{ padding: 10px 8px; }
+  .table-pedidos tbody td{ padding: 11px 8px; }
+  .btn-xs{ padding: 4px 7px; font-size: 0.73rem; }
+}
+
+@media (max-width: 1120px){
+  .pedidos-mobile-selectbar{ display: flex; }
+
+  .table-wrap-pedidos{
+    border: none;
+    overflow: visible;
+    border-radius: 0;
+  }
+  .table-pedidos,
+  .table-pedidos tbody{
+    display: block;
+    width: 100%;
+    min-width: 0;
+    background: transparent;
+  }
+  .table-pedidos thead{
+    display: none;
+  }
+  .table-pedidos tbody tr{
+    display: grid;
+    grid-template-columns: 28px 1.05fr 1.25fr 1fr;
+    gap: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    margin-bottom: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  .table-pedidos tbody tr:last-child{
+    margin-bottom: 0;
+  }
+  .table-pedidos tbody td{
+    display: block;
+    border-bottom: none;
+    padding: 0;
+    width: auto;
+  }
+  .table-pedidos td.col-check{
+    grid-column: 1 / 2;
+    grid-row: 1;
+    width: auto;
+    padding: 2px 0 0 0;
+    text-align: left;
+  }
+  .table-pedidos td.col-codigo{
+    grid-column: 2 / 4;
+    grid-row: 1;
+  }
+  .table-pedidos td.col-estado{
+    grid-column: 4 / 5;
+    grid-row: 1;
+    justify-self: end;
+    align-self: start;
+  }
+  .table-pedidos td.col-cliente{
+    grid-column: 1 / 3;
+    grid-row: 2;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+  .table-pedidos td.col-productos{
+    grid-column: 3 / 4;
+    grid-row: 2;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+  .table-pedidos td.col-pago{
+    grid-column: 4 / 5;
+    grid-row: 2;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+  .table-pedidos td.col-actions{
+    grid-column: 1 / -1;
+    grid-row: 3;
+    width: 100%;
+    white-space: normal;
+    text-align: left;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+  }
+  .pedido-items-list{
+    max-width: none;
+    min-width: 0;
+  }
+  .pedido-actions-grid{
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 100%;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .pedido-actions-row{
+    display: contents;
+  }
+  .pedido-actions-row > .btn{
+    flex: 0 1 auto;
+  }
+}
+
 @media (max-width: 900px){
   .sidebar{ display:none; }
   .mobile-topbar{ display:flex; }
@@ -653,6 +960,44 @@ tbody tr:hover{ background: var(--surface-2); }
 
   .form-grid{ grid-template-columns: 1fr; }
   .page-header{ align-items:flex-start; }
+}
+
+@media (max-width: 740px){
+  .table-pedidos tbody tr{
+    grid-template-columns: 28px 1fr auto;
+    gap: 10px 10px;
+    padding: 12px;
+  }
+  .table-pedidos td.col-codigo{
+    grid-column: 2 / 3;
+    grid-row: 1;
+  }
+  .table-pedidos td.col-estado{
+    grid-column: 3 / 4;
+    grid-row: 1;
+  }
+  .table-pedidos td.col-cliente{
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .table-pedidos td.col-productos{
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .table-pedidos td.col-pago{
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
+  .table-pedidos td.col-actions{
+    grid-column: 1 / -1;
+    grid-row: 5;
+  }
+  .pedido-actions-grid{
+    justify-content: stretch;
+  }
+  .pedido-actions-row > .btn{
+    flex: 1 1 calc(33% - 6px);
+  }
 }
 
 @media (max-width: 480px){
