@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Dulces Mele — Haz tu Pedido Online</title>
 <link rel="icon" type="image/png" href="img/favicon-256.png">
-<link rel="stylesheet" href="css/styles.css" />
+<link rel="stylesheet" href="css/styles.css?v=26" />
 <style>
   /* Estilos específicos para la tienda pública de clientes */
   .store-container {
@@ -293,8 +293,8 @@
 
 <!-- Scripts de almacenamiento y nube -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/storage.js?v=24"></script>
-<script src="js/supabase-client.js?v=24"></script>
+<script src="js/storage.js?v=26"></script>
+<script src="js/supabase-client.js?v=26"></script>
 
 <script>
   /* Lógica de la Tienda Pública */
@@ -506,8 +506,8 @@
                   <input type="text" class="qty-input" id="qty-${p.id}" value="${qtyEnCarrito > 0 ? qtyEnCarrito : 1}" readonly />
                   <button class="qty-btn" onclick="Cart.adjustQty('${p.id}', 1, ${esTerminado ? stockActual : 99})">+</button>
                 </div>
-                <button class="btn btn-primary" style="flex: 1;" onclick="Cart.addToCart('${p.id}')">
-                  ${qtyEnCarrito > 0 ? 'Actualizar' : 'Agregar'}
+                <button class="btn btn-primary" id="btn-cart-${p.id}" style="flex: 1;" onclick="Cart.addToCart('${p.id}')">
+                  ${qtyEnCarrito > 0 ? `✓ En pedido (${qtyEnCarrito})` : 'Agregar'}
                 </button>
               `}
             </div>
@@ -518,11 +518,25 @@
 
     function adjustQty(prodId, delta, maxStock = 99){
       const input = document.getElementById(`qty-${prodId}`);
-      if (!input) return;
-      let val = (parseInt(input.value) || 1) + delta;
+      let currentVal = input ? (parseInt(input.value) || 1) : 1;
+      let val = currentVal + delta;
       if (val < 1) val = 1;
-      if (val > maxStock) val = maxStock;
-      input.value = val;
+      if (val > maxStock) {
+        val = maxStock;
+        showToast(`Stock máximo disponible alcanzado (${maxStock})`);
+      }
+      if (input) input.value = val;
+
+      // Si el producto ya estaba agregado al pedido, sincronizarlo de inmediato
+      if (items[prodId]) {
+        items[prodId].cantidad = val;
+        updateCartBar();
+        const btn = document.getElementById(`btn-cart-${prodId}`);
+        if (btn) btn.textContent = `✓ En pedido (${val})`;
+        if (document.getElementById('checkout-modal')) {
+          renderCheckoutModalContent();
+        }
+      }
     }
 
     function addToCart(prodId){
@@ -537,7 +551,7 @@
       if (!prod) return;
 
       const input = document.getElementById(`qty-${prodId}`);
-      const cant = parseInt(input.value) || 1;
+      const cant = parseInt(input ? input.value : 1) || 1;
 
       items[prodId] = {
         producto: prod,
@@ -545,6 +559,8 @@
       };
 
       updateCartBar();
+      const btn = document.getElementById(`btn-cart-${prodId}`);
+      if (btn) btn.textContent = `✓ En pedido (${cant})`;
       showToast(`Agregaste ${cant}x ${prod.nombre} a tu pedido`);
     }
 
@@ -609,12 +625,44 @@
       if (modal) modal.remove();
     }
 
-function renderCheckoutModalContent(){
+    function changeCheckoutQty(prodId, delta){
+      if (!items[prodId]) return;
+      const esTerminado = items[prodId].producto.tipoStock === 'terminado';
+      const maxStock = esTerminado ? (Number(items[prodId].producto.stockActual) || 99) : 99;
+      let nueva = (Number(items[prodId].cantidad) || 1) + delta;
+      if (nueva < 1) {
+        removeFromCart(prodId);
+        return;
+      }
+      if (nueva > maxStock) {
+        nueva = maxStock;
+        showToast(`Stock máximo disponible alcanzado (${maxStock})`);
+      }
+      items[prodId].cantidad = nueva;
+      const input = document.getElementById(`qty-${prodId}`);
+      if (input) input.value = nueva;
+      const btn = document.getElementById(`btn-cart-${prodId}`);
+      if (btn) btn.textContent = `✓ En pedido (${nueva})`;
+      updateCartBar();
+      renderCheckoutModalContent();
+    }
+
+    function renderCheckoutModalContent(){
       const itemKeys = Object.keys(items);
       if (itemKeys.length === 0){
         closeCheckout();
         return;
       }
+
+      // Preservar valores de los campos si el usuario ya los había escrito
+      const prevNombre = document.getElementById('cli-nombre')?.value;
+      const prevTelefono = document.getElementById('cli-telefono')?.value;
+      const prevModalidad = document.getElementById('cli-modalidad')?.value;
+      const prevDireccion = document.getElementById('cli-direccion')?.value;
+      const prevFecha = document.getElementById('cli-fecha')?.value;
+      const prevHorario = document.getElementById('cli-horario')?.value;
+      const prevNotas = document.getElementById('cli-notas')?.value;
+      const prevMedio = document.getElementById('cli-medio-pago')?.value;
 
       const totalAmount = itemKeys.reduce((sum, id) => sum + (items[id].cantidad * items[id].producto.precioVenta), 0);
       const config = Storage.get('configuracion') || {};
@@ -662,18 +710,23 @@ function renderCheckoutModalContent(){
       body.innerHTML = `
         <div style="margin-bottom: 20px;">
           <h4 style="margin-top:0;">Resumen de tus productos</h4>
-          <div style="background: var(--surface-2); padding: 12px; border-radius: var(--radius-sm);">
+          <div style="background: var(--surface-2); padding: 14px; border-radius: var(--radius-sm);">
             ${itemKeys.map(id => {
               const i = items[id];
               return `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                  <div>
-                    <strong>${i.cantidad}x${escapeHtml(i.producto.nombre)}</strong>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid rgba(0,0,0,0.06);">
+                  <div style="flex:1; padding-right:10px;">
+                    <strong style="display:block; font-size:14.5px;">${escapeHtml(i.producto.nombre)}</strong>
                     <div class="text-soft" style="font-size:12px;">${formatCLP(i.producto.precioVenta)} c/u</div>
                   </div>
-                  <div style="display:flex; align-items:center; gap:12px;">
-                    <strong>${formatCLP(i.cantidad * i.producto.precioVenta)}</strong>
-                    <button type="button" class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="Cart.removeFromCart('${id}')">✕</button>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <div style="display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface);">
+                      <button type="button" style="border:none; background:transparent; padding:4px 9px; font-size:15px; font-weight:bold; cursor:pointer;" title="Disminuir cantidad" onclick="Cart.changeCheckoutQty('${id}', -1)">−</button>
+                      <span style="min-width:24px; text-align:center; font-weight:700; font-size:14px;">${i.cantidad}</span>
+                      <button type="button" style="border:none; background:transparent; padding:4px 9px; font-size:15px; font-weight:bold; cursor:pointer;" title="Aumentar cantidad" onclick="Cart.changeCheckoutQty('${id}', 1)">+</button>
+                    </div>
+                    <strong style="min-width:65px; text-align:right;">${formatCLP(i.cantidad * i.producto.precioVenta)}</strong>
+                    <button type="button" class="btn btn-ghost btn-sm" style="color:var(--danger); padding:4px 6px;" title="Quitar producto del pedido" onclick="Cart.removeFromCart('${id}')">✕</button>
                   </div>
                 </div>
               `;
@@ -767,6 +820,34 @@ function renderCheckoutModalContent(){
         </form>
       `;
 
+      // Restaurar valores previos si el usuario ya los había completado antes de ajustar cantidades
+      if (prevNombre !== undefined) document.getElementById('cli-nombre').value = prevNombre;
+      if (prevTelefono !== undefined) document.getElementById('cli-telefono').value = prevTelefono;
+      if (prevModalidad !== undefined) {
+        const modEl = document.getElementById('cli-modalidad');
+        if (modEl) { modEl.value = prevModalidad; toggleDireccion(prevModalidad); }
+      }
+      if (prevDireccion !== undefined) {
+        const dirEl = document.getElementById('cli-direccion');
+        if (dirEl) dirEl.value = prevDireccion;
+      }
+      if (prevFecha !== undefined) {
+        const fEl = document.getElementById('cli-fecha');
+        if (fEl) fEl.value = prevFecha;
+      }
+      if (prevHorario !== undefined) {
+        const hEl = document.getElementById('cli-horario');
+        if (hEl) hEl.value = prevHorario;
+      }
+      if (prevNotas !== undefined) {
+        const nEl = document.getElementById('cli-notas');
+        if (nEl) nEl.value = prevNotas;
+      }
+      if (prevMedio !== undefined) {
+        const mEl = document.getElementById('cli-medio-pago');
+        if (mEl) { mEl.value = prevMedio; toggleMedioPago(prevMedio); }
+      }
+
       document.getElementById('form-cliente-pedido').addEventListener('submit', (e) => {
         e.preventDefault();
         enviarPedido();
@@ -824,14 +905,18 @@ function renderCheckoutModalContent(){
       }
 
       const itemKeys = Object.keys(items);
-      const itemsArray = itemKeys.map(id => ({
-        productoId: id,
-        nombre: items[id].producto.nombre,
-        precioUnitario: items[id].producto.precioVenta,
-        cantidad: items[id].cantidad,
-        subtotal: items[id].cantidad * items[id].producto.precioVenta,
-        tipoStock: items[id].producto.tipoStock || 'terminado'
-      }));
+      const itemsArray = itemKeys.map(id => {
+        const cant = Number(items[id].cantidad) || 1;
+        const precio = Number(items[id].producto.precioVenta) || 0;
+        return {
+          productoId: id,
+          nombre: items[id].producto.nombre,
+          precioUnitario: precio,
+          cantidad: cant,
+          subtotal: cant * precio,
+          tipoStock: items[id].producto.tipoStock || 'terminado'
+        };
+      });
 
       const total = itemsArray.reduce((sum, i) => sum + i.subtotal, 0);
 
@@ -952,7 +1037,7 @@ function renderCheckoutModalContent(){
     }
 
     return {
-      init, adjustQty, addToCart, removeFromCart, openCheckout, closeCheckout, toggleDireccion, toggleMedioPago
+      init, adjustQty, addToCart, removeFromCart, openCheckout, closeCheckout, changeCheckoutQty, toggleDireccion, toggleMedioPago
     };
   })();
 
