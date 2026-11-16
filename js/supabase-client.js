@@ -616,29 +616,40 @@ const SupabaseBridge = (() => {
 
       const pedidosSincronizados = (pedidosNube || []).map(pNube => {
         const rawItems = (itemsNube || []).filter(i => i.pedido_id === pNube.id);
-        const seenItemKeys = new Set();
         const itemsDelPedido = [];
         let huboDuplicados = false;
 
         rawItems.forEach(i => {
-          // Filtrar filas duplicadas si fueron insertadas múltiples veces
-          const itemKey = (i.producto_id || '') + '__' + (i.nombre || '').trim() + '__' + Number(i.precio_unitario);
-          if (!seenItemKeys.has(itemKey)) {
-            seenItemKeys.add(itemKey);
+          const prodId = i.producto_id || null;
+          const normNombre = (i.nombre || 'Producto').trim().toLowerCase();
+          const precio = Number(i.precio_unitario) || 0;
+          const cant = Number(i.cantidad) || 1;
+          const subt = Number(i.subtotal) || (cant * precio);
+
+          // Buscar si ya existe este mismo producto en este pedido
+          const existing = itemsDelPedido.find(it => 
+            (it.productoId && prodId && it.productoId === prodId) ||
+            ((it.nombre || '').trim().toLowerCase() === normNombre && Number(it.precioUnitario) === precio)
+          );
+
+          if (existing) {
+            // ¡CRUCIAL! Si había filas repetidas del mismo producto, SUMAR las cantidades para no perder productos pedidos
+            existing.cantidad = Number(existing.cantidad || 0) + cant;
+            existing.subtotal = Number(existing.subtotal || 0) + subt;
+            huboDuplicados = true;
+          } else {
             itemsDelPedido.push({
-              productoId: i.producto_id,
+              productoId: prodId,
               nombre: i.nombre || 'Producto sin nombre',
-              precioUnitario: Number(i.precio_unitario) || 0,
-              cantidad: Number(i.cantidad) || 1,
-              subtotal: Number(i.subtotal) || 0,
+              precioUnitario: precio,
+              cantidad: cant,
+              subtotal: subt,
               tipoStock: i.tipo_stock || 'terminado'
             });
-          } else {
-            huboDuplicados = true;
           }
         });
 
-        // Si se encontraron items duplicados en la base de datos, auto-reparar en segundo plano
+        // Si se encontraron items duplicados en la base de datos, auto-reparar en segundo plano guardando la cantidad sumada correcta
         if (huboDuplicados && itemsDelPedido.length > 0) {
           repararItemsDuplicadosEnNube(pNube.id, itemsDelPedido);
         }
@@ -922,7 +933,7 @@ const SupabaseBridge = (() => {
             nombre: item.nombre,
             precio_unitario: Number(item.precioUnitario) || 0,
             cantidad: Number(item.cantidad) || 1,
-            subtotal: Number(item.subtotal) || 0,
+            subtotal: Number(item.subtotal) || ((Number(item.cantidad) || 1) * (Number(item.precioUnitario) || 0)),
             tipo_stock: item.tipoStock || 'terminado'
           };
         });

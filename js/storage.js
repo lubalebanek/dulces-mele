@@ -352,11 +352,17 @@ function crearPedido({
       creadoEn: Date.now()
     };
 
-    // Descontar stock de productos terminados
-    items.forEach(item => {
+    // Descontar stock de productos terminados agrupando por productoId para descontar las unidades exactas
+    const stockADescontar = new Map();
+    (items || []).forEach(item => {
       if (item.tipoStock === 'terminado' && item.productoId){
-        descontarStockProducto(item.productoId, item.cantidad);
+        const cant = Number(item.cantidad) || 1;
+        stockADescontar.set(item.productoId, (stockADescontar.get(item.productoId) || 0) + cant);
       }
+    });
+
+    stockADescontar.forEach((cantTotal, prodId) => {
+      descontarStockProducto(prodId, cantTotal);
     });
 
     pedidos.unshift(nuevoPedido);
@@ -481,10 +487,15 @@ function crearPedido({
 
     // Si se cancela el pedido, restaurar stock de productos terminados y remover ventas
     if (cambios.estado === 'cancelado' && anterior.estado !== 'cancelado'){
-      actualizado.items.forEach(item => {
+      const stockARestaurar = new Map();
+      (actualizado.items || []).forEach(item => {
         if (item.tipoStock === 'terminado' && item.productoId){
-          restaurarStockProducto(item.productoId, item.cantidad);
+          const cant = Number(item.cantidad) || 1;
+          stockARestaurar.set(item.productoId, (stockARestaurar.get(item.productoId) || 0) + cant);
         }
+      });
+      stockARestaurar.forEach((cantTotal, prodId) => {
+        restaurarStockProducto(prodId, cantTotal);
       });
       removerPedidoDeVentas(id);
       actualizado.registradoEnVentas = false;

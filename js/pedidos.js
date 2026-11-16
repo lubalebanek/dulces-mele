@@ -731,14 +731,25 @@ const Pedidos = (() => {
         const tipoStock = opt.dataset.tipo || 'terminado';
         const prodObj = productos.find(p => p.id === prodId);
 
-        currentItems.push({
-          productoId: prodId,
-          nombre: prodObj ? prodObj.nombre : opt.textContent.split('—')[0].trim(),
-          precioUnitario: precio,
-          cantidad: cant,
-          subtotal: precio * cant,
-          tipoStock
-        });
+        const prodNombre = prodObj ? prodObj.nombre : opt.textContent.split('—')[0].trim();
+        const existingIdx = currentItems.findIndex(it => 
+          (it.productoId && prodId && it.productoId === prodId) ||
+          ((it.nombre || '').trim().toLowerCase() === prodNombre.toLowerCase())
+        );
+
+        if (existingIdx !== -1) {
+          currentItems[existingIdx].cantidad = Number(currentItems[existingIdx].cantidad || 0) + cant;
+          currentItems[existingIdx].subtotal = currentItems[existingIdx].cantidad * precio;
+        } else {
+          currentItems.push({
+            productoId: prodId,
+            nombre: prodNombre,
+            precioUnitario: precio,
+            cantidad: cant,
+            subtotal: precio * cant,
+            tipoStock
+          });
+        }
 
         cantInput.value = 1;
         sel.value = '';
