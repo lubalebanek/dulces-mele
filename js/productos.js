@@ -284,23 +284,34 @@ const Productos = (() => {
         let capacidadBadge = '<span class="text-soft" style="font-size:12px;">Sin receta</span>';
         if (tieneReceta){
           if (c.maxUnidadesPosibles > 0){
-            capacidadBadge = `<span class="stock-pill-ok">✅ Rinde ${c.maxUnidadesPosibles} ${p.unidadVenta}s</span>`;
+            if (c.unidadesPorPack > 1) {
+              capacidadBadge = `<span class="stock-pill-ok" title="Stock en bodega para ${c.maxUnidadesPosibles} galletas individuales">✅ Rinde ${c.maxPacksPosibles} packs (${c.maxUnidadesPosibles} un)</span>`;
+            } else {
+              capacidadBadge = `<span class="stock-pill-ok">✅ Rinde ${c.maxUnidadesPosibles} ${p.unidadVenta}s</span>`;
+            }
           } else {
             capacidadBadge = `<span class="stock-pill-low">⚠️ Faltan insumos</span>`;
           }
         }
 
+        const costoMostrar = c.costoVenta !== undefined ? c.costoVenta : c.costoTotalPorUnidad;
+        const subtextoCosto = (tieneReceta && c.unidadesPorPack > 1)
+          ? `<div class="text-soft" style="font-size:10.5px;">${App.formatCLP(c.costoUnitarioBase)} / galleta</div>`
+          : '';
+
         return `
           <tr>
             <td>
               <strong>${escapeHtml(p.nombre)}</strong>
-              <div class="text-soft" style="font-size:11.5px;">${escapeHtml(p.categoria)} • ${p.unidadVenta}</div>
+              <div class="text-soft" style="font-size:11.5px;">
+                ${escapeHtml(p.categoria)} • ${p.unidadVenta}${c.unidadesPorPack > 1 ? ` (Pack de ${c.unidadesPorPack} un)` : ''}
+              </div>
             </td>
             <td><strong>${App.formatCLP(p.precioVenta)}</strong></td>
             <td>${tieneReceta ? App.formatCLP(c.costoIngredientesPorUnidad) : '—'}</td>
             <td>${tieneReceta ? App.formatCLP(c.costoEmpaque + c.otrosCostosPorUnidad) : '—'}</td>
             <td>
-              ${tieneReceta ? `<strong>${App.formatCLP(c.costoTotalPorUnidad)}</strong>` : '<span class="text-soft" style="font-size:12px;">Sin costeo</span>'}
+              ${tieneReceta ? `<strong>${App.formatCLP(costoMostrar)}</strong>${subtextoCosto}` : '<span class="text-soft" style="font-size:12px;">Sin costeo</span>'}
             </td>
             <td>
               ${tieneReceta ? `<span style="font-weight:700; color:var(--sage);">${App.formatCLP(c.gananciaPorUnidad)}</span>` : '—'}
@@ -336,12 +347,27 @@ const Productos = (() => {
     const recetaExistente = Storage.getReceta(productoId);
 
     // Estado de trabajo local en el modal
-    let rendimiento = recetaExistente ? (Number(recetaExistente.rendimiento) || 1) : (producto.categoria === 'Tortas' ? 1 : 20);
-    let unidadRendimiento = recetaExistente ? (recetaExistente.unidadRendimiento || 'unidad') : (producto.categoria === 'Tortas' ? 'torta' : 'unidades');
-    let costoEmpaque = recetaExistente ? (Number(recetaExistente.costoEmpaque) || 0) : (producto.categoria === 'Tortas' ? 1200 : 50);
+    let rendimiento = recetaExistente ? (Number(recetaExistente.rendimiento) || 1) : (producto.categoria === 'Tortas' ? 1 : 60);
+    let unidadRendimiento = recetaExistente ? (recetaExistente.unidadRendimiento || 'unidad') : (producto.categoria === 'Tortas' ? 'torta' : 'galletas');
+    
+    // Unidades por Pack (5 para galletas en paquete, 16 para Mix Mele, 1 para tortas)
+    let unidadesPorPack = recetaExistente ? (Number(recetaExistente.unidadesPorPack) || 0) : 0;
+    let rawInstr = recetaExistente ? (recetaExistente.instrucciones || '') : '';
+    if (rawInstr.includes('<!--PACK:')) {
+      const m = rawInstr.match(/<!--PACK:(\d+)-->/);
+      if (m && !unidadesPorPack) unidadesPorPack = Number(m[1]);
+      rawInstr = rawInstr.replace(/<!--PACK:\d+-->\s*/, '');
+    }
+    if (!unidadesPorPack) {
+      if ((producto.nombre || '').toLowerCase().includes('mix mele')) unidadesPorPack = 16;
+      else if (producto.categoria === 'Galletas' && (producto.unidadVenta === 'paquete' || producto.unidadVenta === 'pack')) unidadesPorPack = 5;
+      else unidadesPorPack = 1;
+    }
+    let instrucciones = rawInstr;
+
+    let costoEmpaque = recetaExistente ? (Number(recetaExistente.costoEmpaque) || 0) : (producto.categoria === 'Tortas' ? 1200 : 24);
     let otrosCostos = recetaExistente ? (Number(recetaExistente.otrosCostos) || 0) : 500;
     let margenDeseado = recetaExistente ? (Number(recetaExistente.margenDeseado) || 65) : 65;
-    let instrucciones = recetaExistente ? (recetaExistente.instrucciones || '') : '';
     let ingredientes = recetaExistente && Array.isArray(recetaExistente.ingredientes)
       ? JSON.parse(JSON.stringify(recetaExistente.ingredientes))
       : [];
@@ -389,36 +415,51 @@ const Productos = (() => {
       });
 
       const rendNum = Math.max(1, Number(rendimiento) || 1);
+      const unidsPack = Math.max(1, Number(unidadesPorPack) || 1);
       const empaqueNum = Number(costoEmpaque) || 0;
       const otrosNum = Number(otrosCostos) || 0;
 
       const costoIngredientesPorUnidad = Math.round(subtotalIngredientesLote / rendNum);
       const otrosPorUnidad = Math.round(otrosNum / rendNum);
-      const costoTotalUnitario = costoIngredientesPorUnidad + empaqueNum + otrosPorUnidad;
-      const gananciaUnidad = producto.precioVenta - costoTotalUnitario;
-      const margenReal = producto.precioVenta > 0 ? Math.round((gananciaUnidad / producto.precioVenta) * 100) : 0;
+      const costoUnitarioBase = costoIngredientesPorUnidad + otrosPorUnidad;
+
+      const esVentaPorPack = (producto.unidadVenta === 'paquete' || producto.unidadVenta === 'pack' || unidsPack > 1);
+      const costoTotalPorPack = Math.round((costoUnitarioBase * unidsPack) + empaqueNum);
+      const costoTotalPorUnidad = Math.round(costoUnitarioBase + (empaqueNum / unidsPack));
+
+      const costoVenta = esVentaPorPack ? costoTotalPorPack : costoTotalPorUnidad;
+      const gananciaVenta = producto.precioVenta - costoVenta;
+      const margenReal = producto.precioVenta > 0 ? Math.round((gananciaVenta / producto.precioVenta) * 100) : 0;
       
       const factorMargen = (100 - (Number(margenDeseado) || 60)) / 100;
-      const precioSugerido = factorMargen > 0 ? Math.round(costoTotalUnitario / factorMargen) : 0;
+      const precioSugerido = factorMargen > 0 ? Math.round(costoVenta / factorMargen) : 0;
+      const packsQueRinde = Math.round((rendNum / unidsPack) * 10) / 10;
 
       bodyEl.innerHTML = `
         <!-- KPI Strip en vivo -->
         <div class="modal-escandallo-kpi-bar">
           <div class="modal-kpi-item">
-            <span class="lbl">Insumos (Unit.)</span>
-            <span class="val" id="kpi-insumos-unit">${App.formatCLP(costoIngredientesPorUnidad)}</span>
+            <span class="lbl">${unidsPack > 1 ? 'Costo 1 Galleta / Unid.' : 'Insumos (Unit.)'}</span>
+            <span class="val" id="kpi-insumos-unit">${App.formatCLP(costoUnitarioBase)}</span>
           </div>
+          ${unidsPack > 1 ? `
+            <div class="modal-kpi-item" style="border-left: 2px solid var(--accent); background: rgba(142,68,173,0.06);">
+              <span class="lbl">Costo Pack (${unidsPack} un + empaque)</span>
+              <span class="val" style="color:var(--accent-dark); font-weight:800;">${App.formatCLP(costoTotalPorPack)}</span>
+            </div>
+          ` : `
+            <div class="modal-kpi-item">
+              <span class="lbl">Empaque + Otros</span>
+              <span class="val" id="kpi-empaque-unit">${App.formatCLP(empaqueNum + otrosPorUnidad)}</span>
+            </div>
+          `}
           <div class="modal-kpi-item">
-            <span class="lbl">Empaque + Otros</span>
-            <span class="val" id="kpi-empaque-unit">${App.formatCLP(empaqueNum + otrosPorUnidad)}</span>
-          </div>
-          <div class="modal-kpi-item">
-            <span class="lbl">Costo Total Unit.</span>
-            <span class="val" style="color:var(--accent-dark);">${App.formatCLP(costoTotalUnitario)}</span>
+            <span class="lbl">Rendimiento Hornada</span>
+            <span class="val" style="color:var(--ink);">${rendNum} un ${unidsPack > 1 ? `(${packsQueRinde} packs)` : ''}</span>
           </div>
           <div class="modal-kpi-item highlight-gain">
             <span class="lbl">Ganancia Neta</span>
-            <span class="val">${App.formatCLP(gananciaUnidad)}</span>
+            <span class="val">${App.formatCLP(gananciaVenta)}</span>
           </div>
           <div class="modal-kpi-item">
             <span class="lbl">Margen Real</span>
@@ -433,25 +474,36 @@ const Productos = (() => {
         <!-- Configuración de la Receta -->
         <div class="form-grid" style="margin-bottom:14px;">
           <div class="field">
-            <label>Rendimiento de esta receta (¿cuántas unidades salen?) *</label>
+            <label>Rendimiento de la hornada (¿cuántas unidades individuales salen?) *</label>
             <input type="number" id="rec-rendimiento" min="1" step="1" value="${rendNum}" required />
-            <div class="form-hint">Ej: 1 para torta completa, 20 para una tanda de galletas.</div>
+            <div class="form-hint">Ej: 60 galletas individuales de una masa, 1 torta completa.</div>
+          </div>
+          <div class="field">
+            <label>Unidades que trae el Pack de Venta *</label>
+            <input type="number" id="rec-unidades-pack" min="1" step="1" value="${unidsPack}" required />
+            <div class="form-hint">Ej: 5 para bolsita de galletas, 16 para Mix Mele, 1 para venta individual.</div>
           </div>
           <div class="field">
             <label>Unidad de rendimiento</label>
-            <input type="text" id="rec-unidad-rend" value="${escapeHtml(unidadRendimiento)}" placeholder="ej: torta, galletas, porciones" />
+            <input type="text" id="rec-unidad-rend" value="${escapeHtml(unidadRendimiento)}" placeholder="ej: galletas, unidades, torta" />
           </div>
           <div class="field">
-            <label>Costo de empaque por unidad (CLP)</label>
+            <label>Costo de empaque por pack/unidad (CLP)</label>
             <input type="number" id="rec-empaque" min="0" step="10" value="${empaqueNum}" />
-            <div class="form-hint">Caja, blonda, cinta, bolsa celofán, sticker</div>
+            <div class="form-hint">Bolsa celofán, sticker, cinta o caja</div>
+          </div>
+          <div class="field full" style="background:var(--surface-2); padding:10px 14px; border-radius:var(--radius-sm); border:1px solid var(--line);">
+            <div style="font-size:13px; color:var(--ink); line-height:1.4;">
+              📦 <strong>Equivalencia de producción:</strong> Una hornada de <strong>${rendNum} unidades</strong> individuales rinde exactamente <strong>${packsQueRinde} paquetes</strong> de ${unidsPack} unidades cada uno.
+              ${unidsPack > 1 ? `<br><span class="text-soft" style="font-size:12px;">Costo por galleta suelta: <strong>${App.formatCLP(costoUnitarioBase)}</strong> | Costo por paquete de ${unidsPack} galletas + bolsita: <strong>${App.formatCLP(costoTotalPorPack)}</strong>.</span>` : ''}
+            </div>
           </div>
           <div class="field">
-            <label>Otros costos directos por lote (CLP)</label>
+            <label>Otros costos directos por hornada (CLP)</label>
             <input type="number" id="rec-otros" min="0" step="50" value="${otrosNum}" />
-            <div class="form-hint">Gas de horno, electricidad, decoración especial</div>
+            <div class="form-hint">Gas de horno, electricidad</div>
           </div>
-          <div class="field full">
+          <div class="field">
             <label>Margen de ganancia deseado objetivo (%): <strong id="lbl-margen-deseado">${margenDeseado}%</strong></label>
             <input type="range" id="rec-margen" min="20" max="85" step="1" value="${margenDeseado}" style="width:100%;" />
           </div>
@@ -462,6 +514,7 @@ const Productos = (() => {
           <label style="font-weight:700; font-size:14px;">Ingredientes de la receta (${itemsCalculados.length})</label>
           <button type="button" class="btn btn-secondary btn-sm" id="btn-add-ingrediente">
             ${App.svgIcon('plus')} Agregar ingrediente
+          </button>
           </button>
         </div>
 
@@ -544,6 +597,10 @@ const Productos = (() => {
       // Config inputs changes
       bodyEl.querySelector('#rec-rendimiento').addEventListener('input', (e) => {
         rendimiento = Number(e.target.value) || 1;
+        renderRecetaModalBody();
+      });
+      bodyEl.querySelector('#rec-unidades-pack')?.addEventListener('input', (e) => {
+        unidadesPorPack = Math.max(1, Number(e.target.value) || 1);
         renderRecetaModalBody();
       });
       bodyEl.querySelector('#rec-unidad-rend').addEventListener('input', (e) => {
@@ -632,6 +689,7 @@ const Productos = (() => {
         Storage.saveReceta(productoId, {
           rendimiento: Math.max(1, Number(rendimiento) || 1),
           unidadRendimiento: unidadRendimiento || 'unidad',
+          unidadesPorPack: Math.max(1, Number(unidadesPorPack) || 1),
           costoEmpaque: Number(costoEmpaque) || 0,
           otrosCostos: Number(otrosCostos) || 0,
           margenDeseado: Number(margenDeseado) || 60,

@@ -9,7 +9,10 @@ const Inventario = (() => {
 
   const CATEGORIAS = ['Materias primas','Ingredientes','Decoración','Embalaje','Limpieza','Otros'];
   const UNIDADES = ['kg','g','litro','ml','unidad','caja','paquete','otro'];
-  let vista = 'insumos'; // 'insumos' | 'historial'
+  let vista = 'insumos'; // 'insumos' | 'historial' | 'estimador'
+  let estimadorPeriodo = 'mes_actual';
+  let estimadorFactor = 1.0;
+  let estimadorMostrarDesglose = false;
 
   function render(container){
     container.innerHTML = `
@@ -27,9 +30,10 @@ const Inventario = (() => {
         </div>
       </div>
 
-      <div class="flex gap-8" style="margin-bottom:16px;">
+      <div class="flex gap-8" style="margin-bottom:16px; flex-wrap:wrap;">
         <button class="btn ${vista === 'insumos' ? 'btn-berry' : 'btn-secondary'} btn-sm" id="tab-insumos">Insumos</button>
         <button class="btn ${vista === 'historial' ? 'btn-berry' : 'btn-secondary'} btn-sm" id="tab-historial">Historial de movimientos</button>
+        <button class="btn ${vista === 'estimador' ? 'btn-berry' : 'btn-secondary'} btn-sm" id="tab-estimador" style="font-weight:700;">🛒 Estimador de Compras</button>
       </div>
 
       <div id="inventario-content"></div>
@@ -68,8 +72,11 @@ const Inventario = (() => {
     });
     document.getElementById('tab-insumos').addEventListener('click', () => { vista = 'insumos'; render(container); });
     document.getElementById('tab-historial').addEventListener('click', () => { vista = 'historial'; render(container); });
+    document.getElementById('tab-estimador').addEventListener('click', () => { vista = 'estimador'; render(container); });
 
-    if (vista === 'insumos') renderInsumos(); else renderHistorial();
+    if (vista === 'insumos') renderInsumos();
+    else if (vista === 'historial') renderHistorial();
+    else if (vista === 'estimador') renderEstimadorCompras();
 
     function renderInsumos(){
       const insumos = Storage.get('insumos').sort((a,b) => a.nombre.localeCompare(b.nombre));
@@ -380,6 +387,241 @@ const Inventario = (() => {
         App.toast(tipo === 'entrada' ? 'Entrada registrada correctamente' : 'Salida registrada correctamente');
         vista = 'historial';
         render(container);
+      });
+    }
+
+    /* ---------------- VISTA 3: ESTIMADOR DE COMPRAS MENSUAL ---------------- */
+    function renderEstimadorCompras(){
+      const content = document.getElementById('inventario-content');
+      const datos = Storage.estimarConsumoInsumos({
+        periodo: estimadorPeriodo,
+        factorProyeccion: estimadorFactor
+      });
+
+      const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+      const ahora = new Date();
+      const mesActualNom = meses[ahora.getMonth()];
+      const mesAntNom = meses[(ahora.getMonth() + 11) % 12];
+
+      const totalProdsVendidos = datos.desgloseProductos.reduce((acc, p) => acc + p.cantidadVendida, 0);
+      const totalUnidadesVendidas = datos.desgloseProductos.reduce((acc, p) => acc + p.unidadesTotales, 0);
+
+      content.innerHTML = `
+        <div class="card" style="margin-bottom: 24px;">
+          <!-- Encabezado y controles del Estimador -->
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; margin-bottom:20px; border-bottom:1px solid var(--line); padding-bottom:16px;">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <h2 style="margin:0; font-size:20px;">🛒 Estimador y Plan de Compras Mensual</h2>
+                <span class="badge badge-berry" style="font-size:11px;">Exclusivo Dulces Mele</span>
+              </div>
+              <div class="text-soft" style="font-size:13.5px; margin-top:4px; max-width:650px; line-height:1.4;">
+                Calcula exactamente qué materias primas e insumos debes comprar para el mes según las recetas de tu producción y ventas reales, comparado en vivo contra tu bodega.
+              </div>
+            </div>
+
+            <!-- Filtros interactivos -->
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+              <div>
+                <label style="display:block; font-size:11px; font-weight:700; color:var(--ink-soft); margin-bottom:3px;">PERIODO BASE</label>
+                <select id="sel-estimador-periodo" class="btn btn-secondary btn-sm" style="font-size:13px; font-weight:600; padding:6px 12px; cursor:pointer;">
+                  <option value="mes_actual" ${estimadorPeriodo === 'mes_actual' ? 'selected' : ''}>📅 Mes actual (${mesActualNom})</option>
+                  <option value="mes_anterior" ${estimadorPeriodo === 'mes_anterior' ? 'selected' : ''}>📅 Mes anterior (${mesAntNom})</option>
+                  <option value="ultimos_30" ${estimadorPeriodo === 'ultimos_30' ? 'selected' : ''}>📅 Últimos 30 días</option>
+                  <option value="todo" ${estimadorPeriodo === 'todo' ? 'selected' : ''}>📅 Histórico completo</option>
+                </select>
+              </div>
+
+              <div>
+                <label style="display:block; font-size:11px; font-weight:700; color:var(--ink-soft); margin-bottom:3px;">PROYECCIÓN DE VENTAS</label>
+                <div style="display:inline-flex; border:1px solid var(--line); border-radius:var(--radius-sm); overflow:hidden; background:var(--surface);">
+                  <button type="button" class="btn btn-sm ${estimadorFactor === 1.0 ? 'btn-primary' : 'btn-ghost'}" data-factor="1.0" style="border-radius:0; padding:6px 10px; font-size:12px;">100% (Normal)</button>
+                  <button type="button" class="btn btn-sm ${estimadorFactor === 1.2 ? 'btn-primary' : 'btn-ghost'}" data-factor="1.2" style="border-radius:0; padding:6px 10px; font-size:12px;" title="Temporada alta o fiestas (+20%)">+20%</button>
+                  <button type="button" class="btn btn-sm ${estimadorFactor === 1.5 ? 'btn-primary' : 'btn-ghost'}" data-factor="1.5" style="border-radius:0; padding:6px 10px; font-size:12px;" title="Día especial / Navidad (+50%)">+50%</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Métricas Resumen -->
+          <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:14px; margin-bottom:20px;">
+            <div class="card" style="background: linear-gradient(135deg, #FFF6F0 0%, #FFFFFF 100%); border-left: 4px solid var(--berry); padding:16px;">
+              <div class="text-soft" style="font-size:11.5px; font-weight:700; letter-spacing:0.5px;">PRESUPUESTO A INVERTIR</div>
+              <div style="font-size:26px; font-weight:800; color:var(--berry); margin:6px 0;">
+                ${App.formatCLP(datos.costoTotalEstimado)}
+              </div>
+              <div class="text-soft" style="font-size:12px;">Para comprar los insumos faltantes</div>
+            </div>
+
+            <div class="card" style="padding:16px;">
+              <div class="text-soft" style="font-size:11.5px; font-weight:700; letter-spacing:0.5px;">INSUMOS A COMPRAR</div>
+              <div style="font-size:26px; font-weight:800; color:${datos.totalItemsAComprar > 0 ? 'var(--danger)' : 'var(--sage)'}; margin:6px 0;">
+                ${datos.totalItemsAComprar} <span style="font-size:14px; font-weight:normal; color:var(--ink-soft);">de ${datos.totalInsumosRequeridos}</span>
+              </div>
+              <div class="text-soft" style="font-size:12px;">Insumos con stock insuficiente en bodega</div>
+            </div>
+
+            <div class="card" style="padding:16px;">
+              <div class="text-soft" style="font-size:11.5px; font-weight:700; letter-spacing:0.5px;">STOCK BODEGA CUBIERTO</div>
+              <div style="font-size:26px; font-weight:800; color:var(--sage); margin:6px 0;">
+                ${Math.max(0, datos.totalInsumosRequeridos - datos.totalItemsAComprar)} insumos
+              </div>
+              <div class="text-soft" style="font-size:12px;">Ya tienes suficiente stock en tu despensa</div>
+            </div>
+
+            <div class="card" style="padding:16px;">
+              <div class="text-soft" style="font-size:11.5px; font-weight:700; letter-spacing:0.5px;">PRODUCCIÓN BASE</div>
+              <div style="font-size:26px; font-weight:800; color:var(--accent-dark); margin:6px 0;">
+                ${totalProdsVendidos} <span style="font-size:13px; font-weight:normal; color:var(--ink-soft);">packs/items</span>
+              </div>
+              <div class="text-soft" style="font-size:12px;">Equivale a ${totalUnidadesVendidas} galletas y unidades</div>
+            </div>
+          </div>
+
+          <!-- Barra de Acciones -->
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:18px;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-primary" id="btn-copiar-estimador-wsp" style="background:#25D366; border-color:#25D366; font-weight:600; font-size:13.5px; display:inline-flex; align-items:center; gap:8px;">
+                <span>📲 Copiar Lista para WhatsApp / Proveedor</span>
+              </button>
+              <button type="button" class="btn btn-secondary" id="btn-imprimir-estimador" style="font-size:13.5px; display:inline-flex; align-items:center; gap:8px;">
+                <span>🖨️ Imprimir Lista de Compras</span>
+              </button>
+            </div>
+
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-toggle-desglose" style="font-size:13px; font-weight:600; color:var(--accent-dark);">
+              ${estimadorMostrarDesglose ? '▲ Ocultar desglose de productos' : '▼ Ver productos que componen este cálculo'}
+            </button>
+          </div>
+
+          <!-- Acordeón Desglose de Productos Analizados -->
+          ${estimadorMostrarDesglose ? `
+            <div style="background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:14px 16px; margin-bottom:20px;">
+              <div style="font-weight:700; font-size:13.5px; margin-bottom:8px; color:var(--ink);">
+                🧁 Productos analizados en el periodo (${datos.desgloseProductos.length}):
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:10px;">
+                ${datos.desgloseProductos.map(p => `
+                  <div style="background:var(--surface); border:1px solid var(--line); padding:8px 12px; border-radius:var(--radius-sm); font-size:13px;">
+                    <strong>${escapeHtml(p.producto.nombre)}</strong>
+                    <div class="text-soft" style="font-size:12px; margin-top:2px;">
+                      ${p.cantidadVendida} ${p.producto.unidadVenta || 'paquetes'} 
+                      ${p.unidadesPorPack > 1 ? `(×${p.unidadesPorPack} un = <strong>${p.unidadesTotales} unidades</strong>)` : ''}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Tabla de Lista de Compras -->
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="min-width:180px;">Materia Prima / Insumo</th>
+                  <th>Categoría</th>
+                  <th style="text-align:right;">Consumo Necesario</th>
+                  <th style="text-align:right;">Stock en Bodega</th>
+                  <th style="text-align:right; min-width:130px;">A Comprar (Faltante)</th>
+                  <th style="text-align:right;">Costo Unit.</th>
+                  <th style="text-align:right;">Total Inversión</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${datos.listaCompras.length === 0 ? `
+                  <tr>
+                    <td colspan="7" style="text-align:center; padding:32px; color:var(--ink-soft);">
+                      No se encontraron consumos de insumos en el periodo seleccionado o los productos no tienen recetas asociadas.
+                    </td>
+                  </tr>
+                ` : datos.listaCompras.map(item => {
+                  const necesitaCompra = item.faltaComprar > 0;
+                  return `
+                    <tr style="${necesitaCompra ? 'background:#FFFDFB;' : ''}">
+                      <td>
+                        <strong>${escapeHtml(item.nombre)}</strong>
+                      </td>
+                      <td>
+                        <span class="badge badge-neutral" style="font-size:11px;">${escapeHtml(item.categoria)}</span>
+                      </td>
+                      <td style="text-align:right; font-weight:600;">
+                        ${item.requerido} ${escapeHtml(item.unidadMedida)}
+                      </td>
+                      <td style="text-align:right; color:var(--ink-soft);">
+                        ${item.stockActual} ${escapeHtml(item.unidadMedida)}
+                      </td>
+                      <td style="text-align:right;">
+                        ${necesitaCompra ? `
+                          <span style="display:inline-block; font-weight:800; color:var(--danger); background:#FDF2F2; padding:3px 8px; border-radius:var(--radius-sm); border:1px solid #F5C6CB;">
+                            Comprar ${item.faltaComprar} ${escapeHtml(item.unidadMedida)}
+                          </span>
+                        ` : `
+                          <span class="stock-pill-ok" style="font-size:11.5px;">✅ Stock OK</span>
+                        `}
+                      </td>
+                      <td style="text-align:right; font-size:12.5px; color:var(--ink-soft);">
+                        ${App.formatCLP(item.costoUnitario)} / ${escapeHtml(item.unidadMedida)}
+                      </td>
+                      <td style="text-align:right; font-weight:700; color:${necesitaCompra ? 'var(--berry)' : 'var(--ink-soft)'};">
+                        ${necesitaCompra ? App.formatCLP(item.costoEstimado) : '—'}
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+
+      // Event listeners del estimador
+      content.querySelector('#sel-estimador-periodo')?.addEventListener('change', (e) => {
+        estimadorPeriodo = e.target.value;
+        renderEstimadorCompras();
+      });
+
+      content.querySelectorAll('[data-factor]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          estimadorFactor = Number(btn.dataset.factor) || 1.0;
+          renderEstimadorCompras();
+        });
+      });
+
+      content.querySelector('#btn-toggle-desglose')?.addEventListener('click', () => {
+        estimadorMostrarDesglose = !estimadorMostrarDesglose;
+        renderEstimadorCompras();
+      });
+
+      content.querySelector('#btn-imprimir-estimador')?.addEventListener('click', () => {
+        window.print();
+      });
+
+      content.querySelector('#btn-copiar-estimador-wsp')?.addEventListener('click', () => {
+        const faltantes = datos.listaCompras.filter(i => i.faltaComprar > 0);
+        if (faltantes.length === 0){
+          App.toast('¡Tu bodega tiene stock suficiente para cubrir toda la producción! No hay compras pendientes.');
+          return;
+        }
+
+        const lineas = faltantes.map(i => `• *${i.nombre}*: ${i.faltaComprar} ${i.unidadMedida} (~${App.formatCLP(i.costoEstimado)})`).join('\n');
+        const txt = `🧁 *LISTA DE COMPRAS — DULCES MELE*\n` +
+          `📅 Periodo: ${estimadorPeriodo === 'mes_actual' ? mesActualNom : estimadorPeriodo === 'mes_anterior' ? mesAntNom : 'Últimos 30 días'} ${estimadorFactor > 1.0 ? `(Proyección +${Math.round((estimadorFactor - 1) * 100)}%)` : ''}\n` +
+          `----------------------------------------\n` +
+          `🛒 *MATERIAS PRIMAS A COMPRAR (${faltantes.length} insumos):*\n${lineas}\n` +
+          `----------------------------------------\n` +
+          `💰 *PRESUPUESTO TOTAL ESTIMADO: ${App.formatCLP(datos.costoTotalEstimado)}*\n` +
+          `_Generado desde Gestor Dulces Mele_`;
+
+        if (navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(txt).then(() => {
+            App.toast('✓ ¡Lista de compras copiada al portapapeles! Lista para pegar en WhatsApp.');
+          }).catch(() => {
+            prompt('Copia tu lista de compras para WhatsApp:', txt);
+          });
+        } else {
+          prompt('Copia tu lista de compras para WhatsApp:', txt);
+        }
       });
     }
   }

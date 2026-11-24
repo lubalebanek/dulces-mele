@@ -372,18 +372,25 @@ const SupabaseBridge = (() => {
       const recetasLocal = Storage.get('recetas') || [];
 
       if (recetasNube && recetasNube.length > 0) {
-        const sincronizadas = recetasNube.map(r => ({
-          id: r.id,
-          productoId: r.producto_id,
-          rendimiento: Number(r.rendimiento) || 1,
-          unidadRendimiento: r.unidad_rendimiento || 'unidad',
-          costoEmpaque: Number(r.costo_empaque) || 0,
-          otrosCostos: Number(r.otros_costos) || 0,
-          margenDeseado: Number(r.margen_deseado) || 60,
-          instrucciones: r.instrucciones || '',
-          ingredientes: Array.isArray(r.ingredientes) ? r.ingredientes : [],
-          actualizadoEn: r.actualizado_en ? new Date(r.actualizado_en).getTime() : Date.now()
-        }));
+        const sincronizadas = recetasNube.map(r => {
+          let unidsPack = 1;
+          const instr = r.instrucciones || '';
+          const m = instr.match(/<!--PACK:(\d+)-->/);
+          if (m) unidsPack = Number(m[1]) || 1;
+          return {
+            id: r.id,
+            productoId: r.producto_id,
+            rendimiento: Number(r.rendimiento) || 1,
+            unidadRendimiento: r.unidad_rendimiento || 'unidad',
+            unidadesPorPack: unidsPack,
+            costoEmpaque: Number(r.costo_empaque) || 0,
+            otrosCostos: Number(r.otros_costos) || 0,
+            margenDeseado: Number(r.margen_deseado) || 60,
+            instrucciones: instr,
+            ingredientes: Array.isArray(r.ingredientes) ? r.ingredientes : [],
+            actualizadoEn: r.actualizado_en ? new Date(r.actualizado_en).getTime() : Date.now()
+          };
+        });
 
         Storage.save('recetas', sincronizadas);
         console.log(`✓ ${sincronizadas.length} recetas sincronizadas desde Supabase`);
@@ -407,6 +414,10 @@ const SupabaseBridge = (() => {
     try {
       const idValido = esUUID(receta.id) ? receta.id : generarUUIDSeguro();
       receta.id = idValido;
+      const unidsPack = Math.max(1, Number(receta.unidadesPorPack) || 1);
+      let instr = (receta.instrucciones || '').replace(/<!--PACK:\d+-->\s*/, '').trim();
+      const instrFinal = `<!--PACK:${unidsPack}--> ${instr}`.trim();
+
       const payload = {
         id: idValido,
         producto_id: receta.productoId,
@@ -415,7 +426,7 @@ const SupabaseBridge = (() => {
         costo_empaque: Number(receta.costoEmpaque) || 0,
         otros_costos: Number(receta.otrosCostos) || 0,
         margen_deseado: Number(receta.margenDeseado) || 60,
-        instrucciones: receta.instrucciones || '',
+        instrucciones: instrFinal,
         ingredientes: Array.isArray(receta.ingredientes) ? receta.ingredientes : [],
         actualizado_en: new Date().toISOString()
       };

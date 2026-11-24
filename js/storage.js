@@ -576,15 +576,22 @@ function crearPedido({
   function saveReceta(productoId, datosReceta){
     const recetas = get('recetas');
     const idx = recetas.findIndex(r => r.productoId === productoId);
+    const unidsPack = Math.max(1, Number(datosReceta.unidadesPorPack) || 1);
+
+    // Limpiar tag previo y codificar tag PACK en instrucciones para sincronización sin alterar esquema SQL
+    let rawInstr = (datosReceta.instrucciones || '').replace(/<!--PACK:\d+-->\s*/, '').trim();
+    const instrCodificada = `<!--PACK:${unidsPack}--> ${rawInstr}`.trim();
+
     const receta = {
       id: idx !== -1 ? recetas[idx].id : generateId('rec'),
       productoId,
       rendimiento: Math.max(1, Number(datosReceta.rendimiento) || 1),
       unidadRendimiento: datosReceta.unidadRendimiento || 'unidad',
+      unidadesPorPack: unidsPack,
       costoEmpaque: Number(datosReceta.costoEmpaque) || 0,
       otrosCostos: Number(datosReceta.otrosCostos) || 0,
       margenDeseado: Number(datosReceta.margenDeseado) || 60,
-      instrucciones: datosReceta.instrucciones || '',
+      instrucciones: instrCodificada,
       ingredientes: Array.isArray(datosReceta.ingredientes) ? datosReceta.ingredientes : [],
       actualizadoEn: Date.now()
     };
@@ -619,6 +626,88 @@ function crearPedido({
     const receta = recetas.find(r => r.productoId === productoId);
     const insumos = get('insumos');
 
+    const isMixMele = (producto.nombre || '').toLowerCase().includes('mix mele');
+    const isGalleta = (producto.categoria === 'Galletas');
+    const isPaquete = (producto.unidadVenta === 'paquete' || producto.unidadVenta === 'pack');
+
+    // Determinar unidadesPorPack por defecto
+    let defaultUnidadesPack = 1;
+    if (isMixMele) defaultUnidadesPack = 16;
+    else if (isGalleta && isPaquete) defaultUnidadesPack = 5;
+
+    // Caso especial: Mix Mele sin receta directa (compuesto por 16 galletas surtidas)
+    if (isMixMele && (!receta || !Array.isArray(receta.ingredientes) || receta.ingredientes.length === 0)){
+      const recetasGalletas = recetas.filter(r => {
+        const p = productos.find(prod => prod.id === r.productoId);
+        return p && p.categoria === 'Galletas' && !p.nombre.toLowerCase().includes('mix') && Array.isArray(r.ingredientes) && r.ingredientes.length > 0;
+      });
+
+      let costoPromedioGalleta = 0;
+      if (recetasGalletas.length > 0){
+        const costos = recetasGalletas.map(rg => {
+          const rend = Math.max(1, Number(rg.rendimiento) || 1);
+          let sub = 0;
+          (rg.ingredientes || []).forEach(ing => {
+            const ins = insumos.find(i => i.id === ing.insumoId);
+            if (ins) {
+              const cantIns = convertirUnidad(Number(ing.cantidad) || 0, ing.unidad, ins.unidadMedida);
+              sub += cantIns * (Number(ins.costoUnitario) || 0);
+            }
+          });
+          return sub / rend;
+        });
+        costoPromedioGalleta = Math.round(costos.reduce((a,b)=>a+b, 0) / costos.length);
+      }
+      if (costoPromedioGalleta === 0) costoPromedioGalleta = 150;
+
+      const costo16Galletas = costoPromedioGalleta * 16;
+      const costoEmpaqueMix = 800; // caja de presentación + sticker + cinta
+      const costoTotalPack = costo16Galletas + costoEmpaqueMix;
+      const ganancia = Number(producto.precioVenta || 5000) - costoTotalPack;
+      const margen = producto.precioVenta > 0 ? Math.round((ganancia / producto.precioVenta) * 100) : 0;
+
+      return {
+        tieneReceta: true,
+        esVirtualMix: true,
+        receta: {
+          id: 'virtual-mix-mele',
+          productoId: producto.id,
+          rendimiento: 16,
+          unidadRendimiento: 'galletas surtidas',
+          unidadesPorPack: 16,
+          costoEmpaque: costoEmpaqueMix,
+          otrosCostos: 0,
+          margenDeseado: 60,
+          instrucciones: 'Surtido de 16 galletas (2 de cada variedad) en caja de presentación Dulces Mele.',
+          ingredientes: []
+        },
+        producto,
+        rendimiento: 16,
+        unidadRendimiento: 'galletas surtidas',
+        unidadesPorPack: 16,
+        packsQueRinde: 1,
+        costoEmpaque: costoEmpaqueMix,
+        otrosCostos: 0,
+        otrosCostosPorUnidad: 0,
+        costoIngredientesTotal: costo16Galletas,
+        costoIngredientesPorUnidad: costoPromedioGalleta,
+        costoUnitarioBase: costoPromedioGalleta,
+        costoTotalPorUnidad: Math.round(costoPromedioGalleta + (costoEmpaqueMix / 16)),
+        costoTotalPorPack: costoTotalPack,
+        costoVenta: costoTotalPack,
+        costoTotalLote: costoTotalPack,
+        precioVenta: Number(producto.precioVenta) || 5000,
+        gananciaPorUnidad: ganancia,
+        margenPorcentaje: margen,
+        margenDeseado: 60,
+        precioSugerido: Math.round(costoTotalPack / 0.4),
+        maxLotesPosibles: 99,
+        maxUnidadesPosibles: 99 * 16,
+        maxPacksPosibles: 99,
+        items: []
+      };
+    }
+
     if (!receta || !Array.isArray(receta.ingredientes) || receta.ingredientes.length === 0){
       return {
         tieneReceta: false,
@@ -626,13 +715,18 @@ function crearPedido({
         producto,
         rendimiento: 1,
         unidadRendimiento: producto.unidadVenta || 'unidad',
+        unidadesPorPack: defaultUnidadesPack,
+        packsQueRinde: 1,
         items: [],
         costoIngredientesTotal: 0,
         costoIngredientesPorUnidad: 0,
         costoEmpaque: 0,
         otrosCostos: 0,
         otrosCostosPorUnidad: 0,
+        costoUnitarioBase: 0,
         costoTotalPorUnidad: 0,
+        costoTotalPorPack: 0,
+        costoVenta: 0,
         costoTotalLote: 0,
         precioVenta: Number(producto.precioVenta) || 0,
         gananciaPorUnidad: Number(producto.precioVenta) || 0,
@@ -640,9 +734,18 @@ function crearPedido({
         margenDeseado: 60,
         precioSugerido: 0,
         maxLotesPosibles: 0,
-        maxUnidadesPosibles: 0
+        maxUnidadesPosibles: 0,
+        maxPacksPosibles: 0
       };
     }
+
+    // Extraer unidadesPorPack de receta o instrucciones
+    let unidadesPorPack = Number(receta.unidadesPorPack) || 0;
+    if (!unidadesPorPack && receta.instrucciones) {
+      const m = String(receta.instrucciones).match(/<!--PACK:(\d+)-->/);
+      if (m) unidadesPorPack = Number(m[1]);
+    }
+    if (!unidadesPorPack) unidadesPorPack = defaultUnidadesPack;
 
     const rendimiento = Math.max(1, Number(receta.rendimiento) || 1);
     const costoEmpaque = Number(receta.costoEmpaque) || 0;
@@ -701,25 +804,36 @@ function crearPedido({
 
     const costoIngredientesPorUnidad = Math.round(costoIngredientesTotal / rendimiento);
     const otrosCostosPorUnidad = Math.round(otrosCostos / rendimiento);
-    const costoTotalPorUnidad = Math.round(costoIngredientesPorUnidad + costoEmpaque + otrosCostosPorUnidad);
-    const costoTotalLote = Math.round(costoIngredientesTotal + (costoEmpaque * rendimiento) + otrosCostos);
+    const costoUnitarioBase = costoIngredientesPorUnidad + otrosCostosPorUnidad;
+
+    // Si se vende como pack (o unidadesPorPack > 1)
+    const costoTotalPorPack = Math.round((costoUnitarioBase * unidadesPorPack) + costoEmpaque);
+    const costoTotalPorUnidad = Math.round(costoUnitarioBase + (costoEmpaque / unidadesPorPack));
+    const costoTotalLote = Math.round(costoIngredientesTotal + (costoEmpaque * (rendimiento / unidadesPorPack)) + otrosCostos);
+
+    const esVentaPorPack = isPaquete || unidadesPorPack > 1;
+    const costoVenta = esVentaPorPack ? costoTotalPorPack : costoTotalPorUnidad;
 
     const precioVenta = Number(producto.precioVenta) || 0;
-    const gananciaPorUnidad = precioVenta - costoTotalPorUnidad;
-    const margenPorcentaje = precioVenta > 0 ? Math.round(((precioVenta - costoTotalPorUnidad) / precioVenta) * 100) : 0;
+    const gananciaPorUnidad = precioVenta - costoVenta;
+    const margenPorcentaje = precioVenta > 0 ? Math.round((gananciaPorUnidad / precioVenta) * 100) : 0;
 
     const factor = (100 - margenDeseado) / 100;
-    const precioSugerido = factor > 0 ? Math.round(costoTotalPorUnidad / factor) : 0;
+    const precioSugerido = factor > 0 ? Math.round(costoVenta / factor) : 0;
 
     const lotesCalculados = maxLotesPosibles === Infinity ? 0 : Math.floor(Math.max(0, maxLotesPosibles));
     const unidadesCalculadas = lotesCalculados * rendimiento;
+    const packsQueRinde = Math.round((rendimiento / unidadesPorPack) * 10) / 10;
+    const maxPacksPosibles = Math.floor(unidadesCalculadas / unidadesPorPack);
 
     return {
       tieneReceta: true,
       receta,
       producto,
       rendimiento,
-      unidadRendimiento: receta.unidadRendimiento || 'unidad',
+      unidadRendimiento: receta.unidadRendimiento || (esVentaPorPack ? 'unidades' : 'unidad'),
+      unidadesPorPack,
+      packsQueRinde,
       costoEmpaque,
       otrosCostos,
       otrosCostosPorUnidad,
@@ -728,14 +842,18 @@ function crearPedido({
       items,
       costoIngredientesTotal,
       costoIngredientesPorUnidad,
+      costoUnitarioBase,
       costoTotalPorUnidad,
+      costoTotalPorPack,
+      costoVenta,
       costoTotalLote,
       precioVenta,
       gananciaPorUnidad,
       margenPorcentaje,
       precioSugerido,
       maxLotesPosibles: lotesCalculados,
-      maxUnidadesPosibles: unidadesCalculadas
+      maxUnidadesPosibles: unidadesCalculadas,
+      maxPacksPosibles
     };
   }
 
@@ -848,6 +966,214 @@ function crearPedido({
     };
   }
 
+  function estimarConsumoInsumos({ periodo = 'mes_actual', fechaInicio = '', fechaFin = '', factorProyeccion = 1.0, simulacion = null } = {}){
+    const ventas = get('ventas') || [];
+    const pedidos = get('pedidos') || [];
+    const productos = get('productos') || [];
+    const insumos = get('insumos') || [];
+    const recetas = get('recetas') || [];
+
+    const hoy = new Date();
+    let fIni = fechaInicio;
+    let fFin = fechaFin;
+
+    if (!fIni || !fFin) {
+      if (periodo === 'mes_actual') {
+        const y = hoy.getFullYear();
+        const m = String(hoy.getMonth() + 1).padStart(2, '0');
+        fIni = `${y}-${m}-01`;
+        fFin = todayISO();
+      } else if (periodo === 'mes_anterior') {
+        const prev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+        const lastDay = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+        const y = prev.getFullYear();
+        const m = String(prev.getMonth() + 1).padStart(2, '0');
+        fIni = `${y}-${m}-01`;
+        fFin = `${y}-${m}-${String(lastDay.getDate()).padStart(2, '0')}`;
+      } else if (periodo === 'ultimos_30') {
+        const d30 = new Date(hoy.getTime() - (30 * 24 * 60 * 60 * 1000));
+        fIni = d30.toISOString().slice(0, 10);
+        fFin = todayISO();
+      } else {
+        fIni = '2020-01-01';
+        fFin = '2099-12-31';
+      }
+    }
+
+    // Mapa consolidado de ventas/producción
+    const produccionMap = new Map();
+
+    function registrarItem(prodId, prodNombre, cant) {
+      const cantidad = Number(cant) || 0;
+      if (cantidad <= 0) return;
+
+      const norm = (prodNombre || '').trim().toLowerCase();
+      const producto = productos.find(p => (prodId && p.id === prodId) || (p.nombre || '').trim().toLowerCase() === norm);
+      const key = producto ? producto.id : norm;
+
+      if (!produccionMap.has(key)) {
+        produccionMap.set(key, {
+          producto: producto || { id: key, nombre: prodNombre, categoria: 'Otros', unidadVenta: 'unidad' },
+          cantidadVendida: 0,
+          unidadesTotales: 0,
+          unidadesPorPack: 1
+        });
+      }
+      const reg = produccionMap.get(key);
+      reg.cantidadVendida += cantidad;
+    }
+
+    if (simulacion && typeof simulacion === 'object') {
+      Object.entries(simulacion).forEach(([prodId, cant]) => {
+        const prod = productos.find(p => p.id === prodId);
+        registrarItem(prodId, prod ? prod.nombre : prodId, cant);
+      });
+    } else {
+      ventas.forEach(v => {
+        if (v.fecha >= fIni && v.fecha <= fFin) {
+          registrarItem(v.productoId, v.productoNombre, v.cantidad);
+        }
+      });
+
+      pedidos.forEach(p => {
+        const fechaPed = p.fechaEntrega || (p.creadoEn ? p.creadoEn.slice(0, 10) : '');
+        if (fechaPed >= fIni && fechaPed <= fFin && p.estado !== 'cancelado') {
+          if (!p.registradoEnVentas) {
+            (p.items || []).forEach(it => {
+              registrarItem(it.productoId, it.nombre, it.cantidad);
+            });
+          }
+        }
+      });
+    }
+
+    const factor = Math.max(0.1, Number(factorProyeccion) || 1.0);
+    const desgloseProductos = [];
+
+    produccionMap.forEach(reg => {
+      reg.cantidadVendida = Math.round(reg.cantidadVendida * factor * 10) / 10;
+      const prod = reg.producto;
+      const isMix = (prod.nombre || '').toLowerCase().includes('mix mele');
+      const isGalletaPack = (prod.categoria === 'Galletas') && (prod.unidadVenta === 'paquete' || prod.unidadVenta === 'pack');
+
+      const receta = recetas.find(r => r.productoId === prod.id);
+      let unidsPack = 1;
+      if (receta && receta.unidadesPorPack) unidsPack = Number(receta.unidadesPorPack) || 1;
+      else if (receta && receta.instrucciones) {
+        const m = String(receta.instrucciones).match(/<!--PACK:(\d+)-->/);
+        if (m) unidsPack = Number(m[1]);
+      }
+      if (!unidsPack || unidsPack === 1) {
+        if (isMix) unidsPack = 16;
+        else if (isGalletaPack) unidsPack = 5;
+      }
+
+      reg.unidadesPorPack = unidsPack;
+      reg.unidadesTotales = Math.round(reg.cantidadVendida * unidsPack);
+      desgloseProductos.push(reg);
+    });
+
+    const insumosReqMap = new Map();
+
+    function acumularInsumo(insumoId, cantidad, unidadReceta) {
+      if (!insumoId || cantidad <= 0) return;
+      const insumo = insumos.find(i => i.id === insumoId);
+      if (!insumo) return;
+
+      const cantEnUnidadInsumo = convertirUnidad(cantidad, unidadReceta, insumo.unidadMedida);
+
+      if (!insumosReqMap.has(insumo.id)) {
+        insumosReqMap.set(insumo.id, {
+          id: insumo.id,
+          nombre: insumo.nombre,
+          categoria: insumo.categoria || 'Materias primas',
+          unidadMedida: insumo.unidadMedida,
+          costoUnitario: Number(insumo.costoUnitario) || 0,
+          stockActual: Number(insumo.stockActual) || 0,
+          stockMinimo: Number(insumo.stockMinimo) || 0,
+          requerido: 0
+        });
+      }
+      const data = insumosReqMap.get(insumo.id);
+      data.requerido += cantEnUnidadInsumo;
+    }
+
+    const recetasGalletas = recetas.filter(r => {
+      const p = productos.find(prod => prod.id === r.productoId);
+      return p && p.categoria === 'Galletas' && !p.nombre.toLowerCase().includes('mix') && Array.isArray(r.ingredientes) && r.ingredientes.length > 0;
+    });
+
+    desgloseProductos.forEach(item => {
+      const prod = item.producto;
+      const isMix = (prod.nombre || '').toLowerCase().includes('mix mele');
+      let receta = recetas.find(r => r.productoId === prod.id);
+
+      if (isMix && (!receta || !Array.isArray(receta.ingredientes) || receta.ingredientes.length === 0)) {
+        if (recetasGalletas.length > 0) {
+          const galletasPorTipo = item.unidadesTotales / recetasGalletas.length;
+          recetasGalletas.forEach(rg => {
+            const rend = Math.max(1, Number(rg.rendimiento) || 1);
+            const factorLote = galletasPorTipo / rend;
+            (rg.ingredientes || []).forEach(ing => {
+              acumularInsumo(ing.insumoId, (Number(ing.cantidad) || 0) * factorLote, ing.unidad);
+            });
+          });
+        }
+        return;
+      }
+
+      if (!receta || !Array.isArray(receta.ingredientes) || receta.ingredientes.length === 0) {
+        return;
+      }
+
+      const rend = Math.max(1, Number(receta.rendimiento) || 1);
+      const factorLote = item.unidadesTotales / rend;
+
+      (receta.ingredientes || []).forEach(ing => {
+        acumularInsumo(ing.insumoId, (Number(ing.cantidad) || 0) * factorLote, ing.unidad);
+      });
+    });
+
+    const listaCompras = [];
+    let costoTotalEstimado = 0;
+    let totalItemsAComprar = 0;
+
+    insumosReqMap.forEach(item => {
+      item.requerido = Math.round(item.requerido * 100) / 100;
+      const stock = item.stockActual;
+      const falta = Math.max(0, Math.round((item.requerido - stock) * 100) / 100);
+      const costoEstimado = Math.round(falta * item.costoUnitario);
+
+      item.faltaComprar = falta;
+      item.costoEstimado = costoEstimado;
+      item.stockSuficiente = stock >= item.requerido;
+
+      if (falta > 0) {
+        totalItemsAComprar++;
+        costoTotalEstimado += costoEstimado;
+      }
+      listaCompras.push(item);
+    });
+
+    listaCompras.sort((a, b) => {
+      if (a.faltaComprar > 0 && b.faltaComprar <= 0) return -1;
+      if (a.faltaComprar <= 0 && b.faltaComprar > 0) return 1;
+      return b.costoEstimado - a.costoEstimado || a.nombre.localeCompare(b.nombre);
+    });
+
+    return {
+      periodo,
+      fechaInicio: fIni,
+      fechaFin: fFin,
+      factorProyeccion: factor,
+      desgloseProductos,
+      listaCompras,
+      costoTotalEstimado,
+      totalItemsAComprar,
+      totalInsumosRequeridos: listaCompras.length
+    };
+  }
+
   return {
     get, save, generateId, init, exportBackup, importBackup, eraseAll, todayISO,
     crearPedido, actualizarPedido, eliminarPedido,
@@ -855,6 +1181,6 @@ function crearPedido({
     limpiarPedidosYVentas, vaciarInventario,
     descontarStockProducto, restaurarStockProducto, eliminarProducto,
     seedPasteleriaSiCorresponde, convertirUnidad, getReceta, saveReceta, eliminarReceta,
-    calcularCostoReceta, producirLote
+    calcularCostoReceta, producirLote, estimarConsumoInsumos
   };
 })();
