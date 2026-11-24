@@ -377,12 +377,18 @@ const SupabaseBridge = (() => {
           const instr = r.instrucciones || '';
           const m = instr.match(/<!--PACK:(\d+)-->/);
           if (m) unidsPack = Number(m[1]) || 1;
+          let mixSel = null;
+          const mMix = instr.match(/<!--MIX:(\{.*?\})-->/);
+          if (mMix) {
+            try { mixSel = JSON.parse(mMix[1]); } catch(e){}
+          }
           return {
             id: r.id,
             productoId: r.producto_id,
             rendimiento: Number(r.rendimiento) || 1,
             unidadRendimiento: r.unidad_rendimiento || 'unidad',
             unidadesPorPack: unidsPack,
+            mixSeleccion: mixSel,
             costoEmpaque: Number(r.costo_empaque) || 0,
             otrosCostos: Number(r.otros_costos) || 0,
             margenDeseado: Number(r.margen_deseado) || 60,
@@ -415,8 +421,15 @@ const SupabaseBridge = (() => {
       const idValido = esUUID(receta.id) ? receta.id : generarUUIDSeguro();
       receta.id = idValido;
       const unidsPack = Math.max(1, Number(receta.unidadesPorPack) || 1);
-      let instr = (receta.instrucciones || '').replace(/<!--PACK:\d+-->\s*/, '').trim();
-      const instrFinal = `<!--PACK:${unidsPack}--> ${instr}`.trim();
+      let instr = (receta.instrucciones || '')
+        .replace(/<!--PACK:\d+-->\s*/g, '')
+        .replace(/<!--MIX:\{.*?\}-->\s*/g, '')
+        .trim();
+      let tagMix = '';
+      if (receta.mixSeleccion && typeof receta.mixSeleccion === 'object' && Object.keys(receta.mixSeleccion).length > 0) {
+        tagMix = `<!--MIX:${JSON.stringify(receta.mixSeleccion)}--> `;
+      }
+      const instrFinal = `<!--PACK:${unidsPack}--> ${tagMix}${instr}`.trim();
 
       const payload = {
         id: idValido,

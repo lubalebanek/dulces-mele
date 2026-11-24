@@ -578,9 +578,17 @@ function crearPedido({
     const idx = recetas.findIndex(r => r.productoId === productoId);
     const unidsPack = Math.max(1, Number(datosReceta.unidadesPorPack) || 1);
 
-    // Limpiar tag previo y codificar tag PACK en instrucciones para sincronización sin alterar esquema SQL
-    let rawInstr = (datosReceta.instrucciones || '').replace(/<!--PACK:\d+-->\s*/, '').trim();
-    const instrCodificada = `<!--PACK:${unidsPack}--> ${rawInstr}`.trim();
+    // Limpiar tags previos y codificar tags PACK y MIX en instrucciones para sincronización sin alterar esquema SQL
+    let rawInstr = (datosReceta.instrucciones || '')
+      .replace(/<!--PACK:\d+-->\s*/g, '')
+      .replace(/<!--MIX:\{.*?\}-->\s*/g, '')
+      .trim();
+
+    let tagMix = '';
+    if (datosReceta.mixSeleccion && typeof datosReceta.mixSeleccion === 'object' && Object.keys(datosReceta.mixSeleccion).length > 0) {
+      tagMix = `<!--MIX:${JSON.stringify(datosReceta.mixSeleccion)}--> `;
+    }
+    const instrCodificada = `<!--PACK:${unidsPack}--> ${tagMix}${rawInstr}`.trim();
 
     const receta = {
       id: idx !== -1 ? recetas[idx].id : generateId('rec'),
@@ -592,6 +600,7 @@ function crearPedido({
       otrosCostos: Number(datosReceta.otrosCostos) || 0,
       margenDeseado: Number(datosReceta.margenDeseado) || 60,
       instrucciones: instrCodificada,
+      mixSeleccion: datosReceta.mixSeleccion || null,
       ingredientes: Array.isArray(datosReceta.ingredientes) ? datosReceta.ingredientes : [],
       actualizadoEn: Date.now()
     };
@@ -1110,14 +1119,37 @@ function crearPedido({
 
       if (isMix && (!receta || !Array.isArray(receta.ingredientes) || receta.ingredientes.length === 0)) {
         if (recetasGalletas.length > 0) {
-          const galletasPorTipo = item.unidadesTotales / recetasGalletas.length;
-          recetasGalletas.forEach(rg => {
-            const rend = Math.max(1, Number(rg.rendimiento) || 1);
-            const factorLote = galletasPorTipo / rend;
-            (rg.ingredientes || []).forEach(ing => {
-              acumularInsumo(ing.insumoId, (Number(ing.cantidad) || 0) * factorLote, ing.unidad);
+          let mixComp = null;
+          if (receta && receta.instrucciones) {
+            const mMix = String(receta.instrucciones).match(/<!--MIX:(\{.*?\})-->/);
+            if (mMix) {
+              try { mixComp = JSON.parse(mMix[1]); } catch(e){}
+            }
+          }
+          if (mixComp && Object.keys(mixComp).length > 0) {
+            const totalGalletasCaja = Object.values(mixComp).reduce((a, b) => a + (Number(b) || 0), 0) || 16;
+            const factorCajas = item.unidadesTotales / totalGalletasCaja;
+            Object.entries(mixComp).forEach(([cookieId, cantEnCaja]) => {
+              const cantCookiesTotal = (Number(cantEnCaja) || 0) * factorCajas;
+              const rg = recetasGalletas.find(r => r.productoId === cookieId);
+              if (rg) {
+                const rend = Math.max(1, Number(rg.rendimiento) || 1);
+                const factorLote = cantCookiesTotal / rend;
+                (rg.ingredientes || []).forEach(ing => {
+                  acumularInsumo(ing.insumoId, (Number(ing.cantidad) || 0) * factorLote, ing.unidad);
+                });
+              }
             });
-          });
+          } else {
+            const galletasPorTipo = item.unidadesTotales / recetasGalletas.length;
+            recetasGalletas.forEach(rg => {
+              const rend = Math.max(1, Number(rg.rendimiento) || 1);
+              const factorLote = galletasPorTipo / rend;
+              (rg.ingredientes || []).forEach(ing => {
+                acumularInsumo(ing.insumoId, (Number(ing.cantidad) || 0) * factorLote, ing.unidad);
+              });
+            });
+          }
         }
         return;
       }

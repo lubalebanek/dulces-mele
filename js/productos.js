@@ -345,9 +345,13 @@ const Productos = (() => {
 
     const insumosDisponibles = Storage.get('insumos').filter(i => i.estado === 'activo');
     const recetaExistente = Storage.getReceta(productoId);
+    const todasRecetas = Storage.get('recetas') || [];
+    const todosProductos = Storage.get('productos') || [];
+
+    const esMixMele = (producto.nombre || '').toLowerCase().includes('mix');
 
     // Estado de trabajo local en el modal
-    let rendimiento = recetaExistente ? (Number(recetaExistente.rendimiento) || 1) : (producto.categoria === 'Tortas' ? 1 : 60);
+    let rendimiento = recetaExistente ? (Number(recetaExistente.rendimiento) || 1) : (producto.categoria === 'Tortas' ? 1 : (esMixMele ? 16 : 60));
     let unidadRendimiento = recetaExistente ? (recetaExistente.unidadRendimiento || 'unidad') : (producto.categoria === 'Tortas' ? 'torta' : 'galletas');
     
     // Unidades por Pack (5 para galletas en paquete, 16 para Mix Mele, 1 para tortas)
@@ -356,16 +360,49 @@ const Productos = (() => {
     if (rawInstr.includes('<!--PACK:')) {
       const m = rawInstr.match(/<!--PACK:(\d+)-->/);
       if (m && !unidadesPorPack) unidadesPorPack = Number(m[1]);
-      rawInstr = rawInstr.replace(/<!--PACK:\d+-->\s*/, '');
+      rawInstr = rawInstr.replace(/<!--PACK:\d+-->\s*/g, '');
     }
+
+    // Configuración interactiva de galletas para Mix Mele
+    let mixSeleccion = {};
+    if (rawInstr.includes('<!--MIX:')) {
+      const mMix = rawInstr.match(/<!--MIX:(\{.*?\})-->/);
+      if (mMix) {
+        try {
+          mixSeleccion = JSON.parse(mMix[1]);
+        } catch(e){}
+      }
+      rawInstr = rawInstr.replace(/<!--MIX:\{.*?\}-->\s*/g, '');
+    }
+
+    // Galletas activas del catálogo para el selector de Mix
+    const galletasCatalogo = todosProductos.filter(p => 
+      p.categoria === 'Galletas' && 
+      !p.nombre.toLowerCase().includes('mix') && 
+      p.estado !== 'inactivo'
+    );
+
+    // Si es Mix Mele y aún no hay selección guardada, pre-cargar 2 de cada una hasta sumar 16
+    if (esMixMele && Object.keys(mixSeleccion).length === 0 && galletasCatalogo.length > 0) {
+      let acumuladas = 0;
+      galletasCatalogo.forEach(g => {
+        if (acumuladas < 16) {
+          mixSeleccion[g.id] = 2;
+          acumuladas += 2;
+        } else {
+          mixSeleccion[g.id] = 0;
+        }
+      });
+    }
+
     if (!unidadesPorPack) {
-      if ((producto.nombre || '').toLowerCase().includes('mix mele')) unidadesPorPack = 16;
+      if (esMixMele) unidadesPorPack = 16;
       else if (producto.categoria === 'Galletas' && (producto.unidadVenta === 'paquete' || producto.unidadVenta === 'pack')) unidadesPorPack = 5;
       else unidadesPorPack = 1;
     }
     let instrucciones = rawInstr;
 
-    let costoEmpaque = recetaExistente ? (Number(recetaExistente.costoEmpaque) || 0) : (producto.categoria === 'Tortas' ? 1200 : 24);
+    let costoEmpaque = recetaExistente ? (Number(recetaExistente.costoEmpaque) || 0) : (producto.categoria === 'Tortas' ? 1200 : (esMixMele ? 800 : 24));
     let otrosCostos = recetaExistente ? (Number(recetaExistente.otrosCostos) || 0) : 500;
     let margenDeseado = recetaExistente ? (Number(recetaExistente.margenDeseado) || 65) : 65;
     let ingredientes = recetaExistente && Array.isArray(recetaExistente.ingredientes)
@@ -434,6 +471,9 @@ const Productos = (() => {
       const factorMargen = (100 - (Number(margenDeseado) || 60)) / 100;
       const precioSugerido = factorMargen > 0 ? Math.round(costoVenta / factorMargen) : 0;
       const packsQueRinde = Math.round((rendNum / unidsPack) * 10) / 10;
+      const totalGalletasMix = esMixMele 
+        ? galletasCatalogo.reduce((acc, g) => acc + (Number(mixSeleccion[g.id]) || 0), 0)
+        : 0;
 
       bodyEl.innerHTML = `
         <!-- KPI Strip en vivo -->
@@ -470,6 +510,73 @@ const Productos = (() => {
             <span class="val" style="color:var(--ink);">${App.formatCLP(precioSugerido)}</span>
           </div>
         </div>
+
+        ${esMixMele ? `
+          <div class="mix-mele-selector-card" style="background: linear-gradient(135deg, #FFFDF9 0%, #F9F3EA 100%); border: 1.5px solid #D4A373; border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; box-shadow: 0 2px 8px rgba(94,48,35,0.06);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; border-bottom: 1px solid rgba(212,163,115,0.3); padding-bottom: 10px; margin-bottom: 12px;">
+              <div>
+                <div style="font-weight:800; color:#5E3023; font-size:15px; display:flex; align-items:center; gap:8px;">
+                  <span>🍪 Armador de Galletas para Mix Mele</span>
+                  <span id="mix-total-badge" class="badge ${totalGalletasMix === 16 ? 'badge-sage' : totalGalletasMix > 16 ? 'badge-berry' : 'badge-gold'}" style="font-size:12px; font-weight:700;">
+                    ${totalGalletasMix} / 16 galletas ${totalGalletasMix === 16 ? '✨ (Caja Completa)' : ''}
+                  </span>
+                </div>
+                <div class="text-soft" style="font-size:12px; margin-top:3px;">
+                  Elige con los botones <strong>[ + ]</strong> y <strong>[ − ]</strong> cuántas galletas de cada variedad llevará esta caja:
+                </div>
+              </div>
+              <div style="display:flex; gap:6px;">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-mix-preset-estandar" title="Poner 2 de cada tipo (16 galletas)" style="font-size:12px; padding:5px 10px; cursor:pointer;">
+                  🔄 2 de c/u (16)
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-mix-limpiar" title="Poner todas en 0" style="font-size:12px; padding:5px 10px; cursor:pointer;">
+                  🗑️ Poner en 0
+                </button>
+              </div>
+            </div>
+
+            <!-- Grilla interactiva de galletas -->
+            <div id="mix-galletas-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 8px; max-height: 220px; overflow-y: auto; padding-right: 4px; margin-bottom: 12px;">
+              ${galletasCatalogo.length === 0 ? `
+                <div style="grid-column: 1 / -1; text-align:center; padding:12px; color:var(--ink-soft); font-size:13px;">
+                  No hay productos de la categoría Galletas registrados para seleccionar.
+                </div>
+              ` : galletasCatalogo.map(g => {
+                const cant = Number(mixSeleccion[g.id]) || 0;
+                const rec = todasRecetas.find(r => r.productoId === g.id && Array.isArray(r.ingredientes) && r.ingredientes.length > 0);
+                const isSelected = cant > 0;
+                return `
+                  <div class="mix-cookie-item" data-cookie-id="${g.id}" style="display:flex; align-items:center; justify-content:space-between; padding: 7px 10px; border-radius: 8px; border: 1.5px solid ${isSelected ? '#B07D62' : 'var(--line)'}; background: ${isSelected ? '#FFF8F0' : 'var(--surface-1)'};">
+                    <div style="overflow:hidden; padding-right:6px;">
+                      <div style="font-size:12.5px; font-weight:${isSelected ? '700' : '600'}; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(g.nombre)}">
+                        ${escapeHtml(g.nombre)}
+                      </div>
+                      <div style="font-size:11px; color:${rec ? '#385624' : '#942B34'};">
+                        ${rec ? '✓ Con receta' : '⚠️ Sin receta'}
+                      </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:3px; flex-shrink:0;">
+                      <button type="button" class="btn-mix-step" data-prod-id="${g.id}" data-action="dec" style="width:26px; height:26px; padding:0; border-radius:6px; border:1px solid var(--line); background:var(--surface-2); font-weight:800; cursor:pointer; font-size:14px; line-height:1;">−</button>
+                      <input type="number" class="input-mix-qty" data-prod-id="${g.id}" min="0" max="32" value="${cant}" style="width:36px; height:26px; text-align:center; font-weight:700; border-radius:6px; border:1px solid ${isSelected ? '#B07D62' : 'var(--line)'}; padding:0 2px; font-size:13px;" />
+                      <button type="button" class="btn-mix-step" data-prod-id="${g.id}" data-action="inc" style="width:26px; height:26px; padding:0; border-radius:6px; border:1px solid var(--line); background:var(--surface-2); font-weight:800; cursor:pointer; font-size:14px; line-height:1;">+</button>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; background:rgba(212,163,115,0.15); border-radius:8px; padding:10px 14px;">
+              <div id="mix-footer-msg" style="font-size:12.5px; color:#5E3023;">
+                ${totalGalletasMix === 16 
+                  ? '<strong>✅ Combinación exacta:</strong> 16 galletas seleccionadas.' 
+                  : `<strong>ℹ️ Seleccionadas:</strong> ${totalGalletasMix} galletas (Mix Mele tradicionalmente lleva 16).`}
+              </div>
+              <button type="button" class="btn btn-primary" id="btn-aplicar-mix" style="background:#5E3023; border-color:#5E3023; font-weight:700; font-size:13px; padding:8px 16px; cursor:pointer;">
+                ✨ Aplicar esta combinación al Mix (${totalGalletasMix} galletas)
+              </button>
+            </div>
+          </div>
+        ` : ''}
 
         <!-- Configuración de la Receta -->
         <div class="form-grid" style="margin-bottom:14px;">
@@ -623,6 +730,145 @@ const Productos = (() => {
         instrucciones = e.target.value;
       });
 
+      // Selector y Armador interactivo de galletas para Mix Mele
+      if (esMixMele) {
+        function actualizarUIMix() {
+          const totalSel = galletasCatalogo.reduce((acc, g) => acc + (Number(mixSeleccion[g.id]) || 0), 0);
+          const badge = bodyEl.querySelector('#mix-total-badge');
+          if (badge) {
+            badge.className = `badge ${totalSel === 16 ? 'badge-sage' : totalSel > 16 ? 'badge-berry' : 'badge-gold'}`;
+            badge.innerHTML = `${totalSel} / 16 galletas ${totalSel === 16 ? '✨ (Caja Completa)' : ''}`;
+          }
+          const msg = bodyEl.querySelector('#mix-footer-msg');
+          if (msg) {
+            msg.innerHTML = totalSel === 16 
+              ? '<strong>✅ Combinación exacta:</strong> 16 galletas seleccionadas.' 
+              : `<strong>ℹ️ Seleccionadas:</strong> ${totalSel} galletas (Mix Mele tradicionalmente lleva 16).`;
+          }
+          const btnAplicar = bodyEl.querySelector('#btn-aplicar-mix');
+          if (btnAplicar) {
+            btnAplicar.textContent = `✨ Aplicar esta combinación al Mix (${totalSel} galletas)`;
+          }
+          bodyEl.querySelectorAll('.mix-cookie-item').forEach(item => {
+            const pid = item.dataset.cookieId;
+            const cant = Number(mixSeleccion[pid]) || 0;
+            const inp = item.querySelector('.input-mix-qty');
+            if (inp && Number(inp.value) !== cant) inp.value = cant;
+            item.style.border = `1.5px solid ${cant > 0 ? '#B07D62' : 'var(--line)'}`;
+            item.style.background = cant > 0 ? '#FFF8F0' : 'var(--surface-1)';
+          });
+        }
+
+        bodyEl.querySelectorAll('.btn-mix-step').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const pid = btn.dataset.prodId;
+            const action = btn.dataset.action;
+            const current = Number(mixSeleccion[pid]) || 0;
+            if (action === 'inc') {
+              mixSeleccion[pid] = current + 1;
+            } else if (action === 'dec') {
+              mixSeleccion[pid] = Math.max(0, current - 1);
+            }
+            actualizarUIMix();
+          });
+        });
+
+        bodyEl.querySelectorAll('.input-mix-qty').forEach(inp => {
+          inp.addEventListener('input', () => {
+            const pid = inp.dataset.prodId;
+            mixSeleccion[pid] = Math.max(0, parseInt(inp.value) || 0);
+            actualizarUIMix();
+          });
+        });
+
+        bodyEl.querySelector('#btn-mix-preset-estandar')?.addEventListener('click', () => {
+          let acumuladas = 0;
+          galletasCatalogo.forEach(g => {
+            if (acumuladas < 16) {
+              mixSeleccion[g.id] = 2;
+              acumuladas += 2;
+            } else {
+              mixSeleccion[g.id] = 0;
+            }
+          });
+          actualizarUIMix();
+        });
+
+        bodyEl.querySelector('#btn-mix-limpiar')?.addEventListener('click', () => {
+          galletasCatalogo.forEach(g => {
+            mixSeleccion[g.id] = 0;
+          });
+          actualizarUIMix();
+        });
+
+        bodyEl.querySelector('#btn-aplicar-mix')?.addEventListener('click', () => {
+          const totalSel = galletasCatalogo.reduce((acc, g) => acc + (Number(mixSeleccion[g.id]) || 0), 0);
+          if (totalSel <= 0) {
+            App.toast('Selecciona al menos una galleta para armar el mix.', 'warning');
+            return;
+          }
+
+          const mapaIngredientes = new Map();
+          const resumenSabores = [];
+          let faltanRecetas = 0;
+
+          galletasCatalogo.forEach(g => {
+            const cant = Number(mixSeleccion[g.id]) || 0;
+            if (cant <= 0) return;
+
+            const rg = todasRecetas.find(r => r.productoId === g.id && Array.isArray(r.ingredientes) && r.ingredientes.length > 0);
+            if (!rg) {
+              faltanRecetas++;
+              resumenSabores.push(`${cant} ${g.nombre} (sin receta)`);
+              return;
+            }
+
+            resumenSabores.push(`${cant} ${g.nombre}`);
+
+            let unidsRend = Number(rg.rendimiento) || 1;
+            const uPack = Number(rg.unidadesPorPack) || 5;
+            if (unidsRend <= 25 && uPack > 1 && (rg.unidadRendimiento || '').toLowerCase().includes('paquet')) {
+              unidsRend = unidsRend * uPack;
+            }
+
+            const factor = cant / Math.max(1, unidsRend);
+
+            (rg.ingredientes || []).forEach(ing => {
+              const cantIng = (Number(ing.cantidad) || 0) * factor;
+              const key = ing.insumoId;
+              if (!mapaIngredientes.has(key)) {
+                mapaIngredientes.set(key, { insumoId: ing.insumoId, cantidad: 0, unidad: ing.unidad });
+              }
+              mapaIngredientes.get(key).cantidad += cantIng;
+            });
+          });
+
+          if (mapaIngredientes.size === 0 && faltanRecetas > 0) {
+            App.toast('Ninguna de las galletas seleccionadas tiene receta guardada aún. Configura primero sus recetas.', 'error');
+            return;
+          }
+
+          ingredientes = [];
+          mapaIngredientes.forEach(val => {
+            ingredientes.push({
+              insumoId: val.insumoId,
+              cantidad: Math.round(val.cantidad * 10) / 10,
+              unidad: val.unidad
+            });
+          });
+
+          rendimiento = totalSel;
+          unidadRendimiento = 'galletas';
+          unidadesPorPack = totalSel;
+          costoEmpaque = 800; // Caja presentación Mix Mele + cinta / sticker
+          otrosCostos = 300;
+          instrucciones = `Surtido personalizado de ${totalSel} galletas (${resumenSabores.join(', ')}). Presentación en caja Dulces Mele.`;
+
+          App.toast(`✨ ¡Receta calculada para ${totalSel} galletas! Se cargaron los ingredientes de la mezcla.`);
+          renderRecetaModalBody();
+        });
+      }
+
       // Add ingredient button
       bodyEl.querySelector('#btn-add-ingrediente').addEventListener('click', () => {
         const primerInsumo = insumosDisponibles[0];
@@ -694,6 +940,7 @@ const Productos = (() => {
           otrosCostos: Number(otrosCostos) || 0,
           margenDeseado: Number(margenDeseado) || 60,
           instrucciones,
+          mixSeleccion: esMixMele ? mixSeleccion : null,
           ingredientes: ingredientesValidos
         });
 
